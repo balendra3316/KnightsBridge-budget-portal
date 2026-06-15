@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { computeInvoice, type Pattern } from '@/lib/commission'
 
 export async function saveBudgetEntries(
   clientId: string,
@@ -31,7 +32,9 @@ export async function saveBudgetEntries(
 
 export async function createDraftFromBudget(
   clientId: string,
-  billingMonth: string
+  billingMonth: string,
+  pattern: Pattern,
+  rate: number
 ): Promise<{ error?: string }> {
   const supabase = await createClient()
 
@@ -43,30 +46,28 @@ export async function createDraftFromBudget(
     .single()
   if (clientErr || !client) return { error: clientErr?.message ?? 'Client not found' }
 
-  // Fetch budget entries for this month
+  // Fetch budget entries for this month, with the service metadata the engine needs.
   const { data: entries } = await supabase
     .from('budget_entries')
-    .select('amount, service_id, client_services(service_type, credit_card)')
+    .select('amount, service_id, client_services(service_type, credit_card, parent_service_id)')
     .eq('client_id', clientId)
     .eq('billing_month', billingMonth)
 
   if (!entries || entries.length === 0) return { error: 'No budget entries for this month' }
 
-  let feeAmount = 0
-  let adSpendAmount = 0
-
-  for (const e of entries) {
-    const svc = e.client_services as unknown as { service_type: string; credit_card: string } | null
-    if (svc?.service_type === 'ad') {
-      adSpendAmount += Number(e.amount) || 0
-    } else {
-      feeAmount += Number(e.amount) || 0
+  // Apply the commission rules in code (sub-lines are skipped inside computeInvoice).
+  const lines = entries.map(e => {
+    const svc = e.client_services as unknown as
+      { service_type: string; credit_card: string; parent_service_id: string | null } | null
+    return {
+      service_type: svc?.service_type ?? 'fee',
+      credit_card: svc?.credit_card ?? 'na',
+      parent_service_id: svc?.parent_service_id ?? null,
+      amount: Number(e.amount) || 0,
     }
-  }
+  })
 
-  const commissionRate = Number(client.commission_rate) || 0
-  const commissionAmount = adSpendAmount * (commissionRate / 100)
-  const invoiceTotal = feeAmount + adSpendAmount + commissionAmount
+  const calc = computeInvoice(lines, pattern, rate)
 
   // Generate invoice number
   const { count } = await supabase
@@ -82,12 +83,13 @@ export async function createDraftFromBudget(
       : client.name,
     billing_month: billingMonth,
     pm_name: client.team,
-    commission_rate: commissionRate,
-    billing_pattern: client.billing_pattern,
-    fee_amount: feeAmount,
-    ad_spend_amount: adSpendAmount,
-    commission_amount: commissionAmount,
-    invoice_total: invoiceTotal,
+    commission_rate: rate * 100,
+    billing_pattern: pattern,
+    fee_amount: calc.feeLines,
+    ad_spend_amount: calc.clientCardAd + calc.kbCardAd,
+    commission_amount: calc.commission,
+    invoice_total: calc.invoiceTotal,
+    monthly_total: calc.monthlyTotal,
     status: 'draft',
   })
 
@@ -104,15 +106,16 @@ export async function sendForReview(
 ): Promise<{ error?: string }> {
   const supabase = await createClient()
 
+  // A draft invoice goes out for the first time; a rejected one is being resubmitted.
   const { data: invoice } = await supabase
     .from('invoices')
     .select('id, status')
     .eq('client_id', clientId)
     .eq('billing_month', billingMonth)
-    .eq('status', 'draft')
+    .in('status', ['draft', 'rejected'])
     .single()
 
-  if (!invoice) return { error: 'No draft invoice found for this month' }
+  if (!invoice) return { error: 'No draft or rejected invoice found for this month' }
 
   const { error } = await supabase
     .from('invoices')

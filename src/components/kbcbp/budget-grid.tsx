@@ -2,12 +2,16 @@
 
 import { useState, useTransition, useRef } from 'react'
 import { saveBudgetEntries, createDraftFromBudget, sendForReview } from '@/app/budget/actions'
+import {
+  computeInvoice, defaultPattern, PATTERN_OPTIONS, RATE_OPTIONS, type Pattern,
+} from '@/lib/commission'
 
 type Service = {
   id: string
   service_name: string
   service_type: string
   credit_card: string
+  parent_service_id: string | null
   sort_order: number
 }
 
@@ -58,6 +62,12 @@ const SVC_COLORS: Record<string, string> = {
   seo: '#0F6E56',
 }
 
+const selectStyle: React.CSSProperties = {
+  padding: '4px 8px', borderRadius: 6, border: '1px solid #D3D1C7',
+  background: '#FFFFFF', fontSize: 11, fontWeight: 600, color: '#3C3489',
+  fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
+}
+
 const REGION_TAGS: Record<string, { bg: string; color: string }> = {
   'New York':     { bg: '#E6F1FB', color: '#185FA5' },
   'New Jersey':   { bg: '#EEEDFE', color: '#534AB7' },
@@ -93,20 +103,27 @@ export default function BudgetGrid({ client, services, entries, months, currentM
     forceRender(n => n + 1)
   }
 
-  // Compute totals
+  // Pattern + rate are picked from the dropdowns; pre-filled from the client's config.
+  const [pattern, setPattern] = useState<Pattern>(
+    defaultPattern(services, (Number(client.commission_rate) || 0) / 100)
+  )
+  const [rate, setRate] = useState<number>((Number(client.commission_rate) || 0) / 100)
+
+  // Monthly total excludes sub-lines (parent_service_id != null), matching the sheet.
   const computeMonthTotal = (month: string) =>
-    services.reduce((sum, svc) => sum + getAmount(svc.id, month), 0)
+    services
+      .filter(svc => !svc.parent_service_id)
+      .reduce((sum, svc) => sum + getAmount(svc.id, month), 0)
 
-  const currentTotal = services.reduce((sum, svc) => sum + getCurrentAmount(svc.id), 0)
-
-  const commRate = Number(client.commission_rate) || 0
-  const currentAdSpend = services
-    .filter(s => s.service_type === 'ad')
-    .reduce((sum, svc) => sum + getCurrentAmount(svc.id), 0)
-  const currentFee = services
-    .filter(s => s.service_type !== 'ad')
-    .reduce((sum, svc) => sum + getCurrentAmount(svc.id), 0)
-  const commissionAmt = currentAdSpend * (commRate / 100)
+  // Run the commission engine over the current month's lines.
+  const currentLines = services.map(svc => ({
+    service_type: svc.service_type,
+    credit_card: svc.credit_card,
+    parent_service_id: svc.parent_service_id,
+    amount: getCurrentAmount(svc.id),
+  }))
+  const calc = computeInvoice(currentLines, pattern, rate)
+  const currentTotal = calc.monthlyTotal
 
   const handleSaveAndDraft = () => {
     setMsg(null)
@@ -118,7 +135,7 @@ export default function BudgetGrid({ client, services, entries, months, currentM
       const saveResult = await saveBudgetEntries(client.id, currentMonth, ents)
       if (saveResult.error) { setMsg(saveResult.error); return }
 
-      const draftResult = await createDraftFromBudget(client.id, currentMonth)
+      const draftResult = await createDraftFromBudget(client.id, currentMonth, pattern, rate)
       if (draftResult.error) { setMsg(draftResult.error); return }
       setMsg('Draft invoice created')
     })
@@ -135,6 +152,27 @@ export default function BudgetGrid({ client, services, entries, months, currentM
 
   const regionTag = client.region ? REGION_TAGS[client.region] : null
   const invoiceStatus = invoice?.status
+
+  // Budget cells are editable until the invoice is committed. Once it's out for
+  // review / approved / sent, the numbers are locked. A rejected invoice reopens
+  // for editing so it can be fixed and resubmitted.
+  const editable = !invoice || invoiceStatus === 'draft' || invoiceStatus === 'rejected'
+
+  const handleResubmit = () => {
+    setMsg(null)
+    startTransition(async () => {
+      const ents = services.map(svc => ({
+        service_id: svc.id,
+        amount: getCurrentAmount(svc.id),
+      }))
+      const saveResult = await saveBudgetEntries(client.id, currentMonth, ents)
+      if (saveResult.error) { setMsg(saveResult.error); return }
+
+      const result = await sendForReview(client.id, currentMonth)
+      if (result.error) { setMsg(result.error); return }
+      setMsg('Resent for approval')
+    })
+  }
 
   return (
     <div style={{
@@ -221,7 +259,7 @@ export default function BudgetGrid({ client, services, entries, months, currentM
                       letterSpacing: '0.2px', textTransform: 'none' as const, marginTop: 2,
                       color: isCurrent ? '#B07D0A' : '#9C9A92',
                     }}>
-                      {isCurrent ? 'Budget entry' : 'Submitted'}
+                      {isCurrent ? (editable ? 'Budget entry' : 'Locked') : 'Submitted'}
                     </span>
                   </th>
                 )
@@ -229,19 +267,35 @@ export default function BudgetGrid({ client, services, entries, months, currentM
             </tr>
           </thead>
           <tbody>
-            {services.map(svc => (
+            {services.map(svc => {
+              const isSubLine = !!svc.parent_service_id
+              return (
               <tr key={svc.id}>
                 {/* Service name */}
                 <td style={{
                   padding: '6px 12px', borderBottom: '1px solid #E8E6E1',
-                  fontSize: 13, color: '#1A1A18',
+                  fontSize: 13, color: isSubLine ? '#9C9A92' : '#1A1A18',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      width: 6, height: 6, borderRadius: 2, flexShrink: 0,
-                      background: SVC_COLORS[svc.service_type] ?? '#9C9A92',
-                    }} />
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    paddingLeft: isSubLine ? 20 : 0,
+                  }}>
+                    {isSubLine ? (
+                      <span style={{ color: '#C4C2B8', flexShrink: 0 }}>&#8627;</span>
+                    ) : (
+                      <span style={{
+                        width: 6, height: 6, borderRadius: 2, flexShrink: 0,
+                        background: SVC_COLORS[svc.service_type] ?? '#9C9A92',
+                      }} />
+                    )}
                     {svc.service_name}
+                    {isSubLine && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 600, letterSpacing: '0.3px',
+                        textTransform: 'uppercase' as const, color: '#B4B2A9',
+                        border: '1px solid #E8E6E1', borderRadius: 3, padding: '1px 4px',
+                      }}>not counted</span>
+                    )}
                   </div>
                 </td>
                 {/* Credit card */}
@@ -264,15 +318,25 @@ export default function BudgetGrid({ client, services, entries, months, currentM
                 {months.map(m => {
                   const isCurrent = m === currentMonth
                   if (isCurrent) {
+                    const cellAmt = getCurrentAmount(svc.id)
                     return (
                       <td key={m} style={{
                         padding: '6px 12px', textAlign: 'right', borderBottom: '1px solid #E8E6E1',
                         background: '#FFFBEB',
                       }}>
-                        <EditableCell
-                          defaultValue={getCurrentAmount(svc.id)}
-                          onChange={val => updateAmount(svc.id, val)}
-                        />
+                        {editable ? (
+                          <EditableCell
+                            defaultValue={cellAmt}
+                            onChange={val => updateAmount(svc.id, val)}
+                          />
+                        ) : (
+                          <span style={{
+                            fontFamily: "'DM Mono', monospace", fontSize: 12,
+                            color: '#6B6A65', fontWeight: 500,
+                          }}>
+                            {cellAmt > 0 ? fmt(cellAmt) : <span style={{ color: '#9C9A92' }}>&mdash;</span>}
+                          </span>
+                        )}
                       </td>
                     )
                   }
@@ -288,7 +352,8 @@ export default function BudgetGrid({ client, services, entries, months, currentM
                   )
                 })}
               </tr>
-            ))}
+              )
+            })}
             {/* Total row */}
             <tr>
               <td style={{
@@ -346,30 +411,73 @@ export default function BudgetGrid({ client, services, entries, months, currentM
         background: '#F5F4F1', borderTop: '1px solid #E8E6E1',
         fontSize: 12, color: '#6B6A65', alignItems: 'center', flexWrap: 'wrap',
       }}>
+        {/* Rule selectors — pick the pattern & rate during budget entry */}
+        {!invoice ? (
+          <>
+            <select
+              value={pattern}
+              onChange={e => setPattern(e.target.value as Pattern)}
+              style={selectStyle}
+            >
+              {PATTERN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select
+              value={rate}
+              onChange={e => setRate(parseFloat(e.target.value))}
+              style={selectStyle}
+            >
+              {RATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </>
+        ) : (
+          <span style={{
+            padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+            background: '#EEEDFE', color: '#3C3489',
+          }}>
+            {PATTERN_OPTIONS.find(o => o.value === pattern)?.label} · {rate * 100}%
+          </span>
+        )}
+
+        <span style={{ width: 1, height: 16, background: '#E8E6E1' }} />
+
         <div>
           <span style={{ color: '#9C9A92' }}>Fee </span>
           <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#1A1A18' }}>
-            {fmt(currentFee)}
+            {fmt(calc.feeLines)}
           </span>
         </div>
         <div>
           <span style={{ color: '#9C9A92' }}>Ad spend </span>
           <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#1A1A18' }}>
-            {fmt(currentAdSpend)}
+            {fmt(calc.clientCardAd + calc.kbCardAd)}
           </span>
         </div>
-        {commRate > 0 && (
+        {pattern === 'A' && rate > 0 && (
           <div>
-            <span style={{ color: '#9C9A92' }}>Commission ({commRate}%) </span>
+            <span style={{ color: '#9C9A92' }}>Commission ({rate * 100}%) </span>
             <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#0F6E56' }}>
-              {fmt(commissionAmt)}
+              {fmt(calc.commission)}
+            </span>
+          </div>
+        )}
+        {pattern === 'B' && rate > 0 && (
+          <div>
+            <span style={{ color: '#9C9A92' }}>Net spend </span>
+            <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#854F0B' }}>
+              {fmt(calc.netSpend)}
             </span>
           </div>
         )}
         <div>
-          <span style={{ color: '#9C9A92' }}>Total </span>
-          <span style={{ fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#3C3489' }}>
-            {fmt(currentTotal)}
+          <span style={{ color: '#9C9A92' }}>Monthly total </span>
+          <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#6B6A65' }}>
+            {fmt(calc.monthlyTotal)}
+          </span>
+        </div>
+        <div>
+          <span style={{ color: '#9C9A92' }}>Invoice total </span>
+          <span style={{ fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 13, color: '#3C3489' }}>
+            {fmt(calc.invoiceTotal)}
           </span>
         </div>
 
@@ -417,6 +525,20 @@ export default function BudgetGrid({ client, services, entries, months, currentM
             padding: '3px 10px', borderRadius: 4, fontSize: 11,
             background: '#E6F1FB', color: '#185FA5', fontWeight: 600,
           }}>Sent to QuickBooks</span>
+        ) : invoiceStatus === 'rejected' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              padding: '3px 10px', borderRadius: 4, fontSize: 11,
+              background: '#FCEBEB', color: '#A32D2D', fontWeight: 600,
+            }}>Rejected</span>
+            <button onClick={handleResubmit} style={{
+              padding: '6px 14px', borderRadius: 6, border: 'none',
+              background: '#EEEDFE', color: '#3C3489', fontSize: 12,
+              fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+            }}>
+              Resend for Approval
+            </button>
+          </div>
         ) : null}
       </div>
     </div>
