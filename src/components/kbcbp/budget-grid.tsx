@@ -102,13 +102,20 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     return [...tops, ...subs]
   })()
 
+  // Leave edit mode, discarding any unsaved cell edits.
+  const closeEdit = () => {
+    amountsRef.current = {}
+    setActiveMonth(null)
+    setMsg(null)
+  }
   const handleSave = () => {
     if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
       const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
       const r = await saveBudgetEntries(client.id, activeMonth, ents)
-      setMsg(r.error || 'Saved')
+      if (r.error) { setMsg(r.error); return }
+      closeEdit()   // saved — exit edit mode
     })
   }
   const handleSaveAndDraft = () => {
@@ -155,8 +162,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
       closeAdd()
     })
   }
-  const handleDelete = (svcId: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This removes its budget amounts and any sub-services.`)) return
+  const handleDelete = (svcId: string) => {
     setMsg(null)
     startTransition(async () => {
       const r = await deleteService(svcId)
@@ -272,7 +278,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                           sub
                         </span>
                       )}
-                      <button onClick={() => handleDelete(svc.id, svc.service_name)}
+                      <button onClick={() => handleDelete(svc.id)}
                         disabled={isPending || !canEditServices}
                         title={canEditServices ? 'Delete'
                           : activeMonth ? 'Locked — this month is already submitted'
@@ -476,7 +482,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
             <button onClick={closeAdd}
               className="px-3 py-1.5 rounded text-xs font-semibold cursor-pointer"
               style={{ border: '1px solid #D9B0AC', background: '#FCEBEB', color: '#A32D2D' }}>
-                
+              Remove
             </button>
           </div>
         )}
@@ -546,13 +552,21 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               }}>{msg}</span>
           )}
 
+          {!isPending && (
+            <button onClick={closeEdit}
+              className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
+              style={{ border: '1px solid #E8E6E1', background: '#FFFFFF', color: '#6B6A65' }}>
+              Close
+            </button>
+          )}
+
           {isPending ? (
             <span className="text-[11px]" style={{ color: '#9C9A92' }}>Saving&hellip;</span>
           ) : !activeInvoice ? (
             <div className="flex gap-2">
               <button onClick={handleSave}
                 className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
-                style={{ border: '1px solid #E8E6E1', background: '#FFFFFF', color: '#6B6A65' }}>
+                style={{ background: '#0F6E56', color: 'white', border: 'none' }}>
                 Save
               </button>
               <button onClick={handleSaveAndDraft}
