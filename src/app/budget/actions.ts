@@ -61,7 +61,7 @@ export async function createDraftFromBudget(
       { service_type: string; credit_card: string; parent_service_id: string | null } | null
     return {
       service_type: svc?.service_type ?? 'fee',
-      credit_card: svc?.credit_card ?? 'na',
+      credit_card: svc?.credit_card ?? '',
       parent_service_id: svc?.parent_service_id ?? null,
       amount: Number(e.amount) || 0,
     }
@@ -97,6 +97,69 @@ export async function createDraftFromBudget(
 
   revalidatePath('/')
   revalidatePath('/invoices')
+  return {}
+}
+
+export async function addService(
+  clientId: string,
+  serviceName: string,
+  serviceType: 'fee' | 'ad' | 'seo',
+  creditCard: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+
+  const { data: maxSort } = await supabase
+    .from('client_services')
+    .select('sort_order')
+    .eq('client_id', clientId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .single()
+
+  const nextSort = (maxSort?.sort_order ?? 0) + 1
+
+  const { error } = await supabase.from('client_services').insert({
+    client_id: clientId,
+    service_name: serviceName,
+    service_type: serviceType,
+    credit_card: creditCard,
+    parent_service_id: null,
+    sort_order: nextSort,
+  })
+
+  if (error) return { error: error.message }
+  revalidatePath('/')
+  return {}
+}
+
+export async function addSubService(
+  clientId: string,
+  parentServiceId: string,
+  serviceName: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+
+  const { data: maxSort } = await supabase
+    .from('client_services')
+    .select('sort_order')
+    .eq('client_id', clientId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .single()
+
+  const nextSort = (maxSort?.sort_order ?? 0) + 1
+
+  const { error } = await supabase.from('client_services').insert({
+    client_id: clientId,
+    service_name: serviceName,
+    service_type: 'fee',
+    credit_card: '',
+    parent_service_id: parentServiceId,
+    sort_order: nextSort,
+  })
+
+  if (error) return { error: error.message }
+  revalidatePath('/')
   return {}
 }
 

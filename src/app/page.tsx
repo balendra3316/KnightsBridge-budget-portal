@@ -3,116 +3,43 @@ import { createClient } from '@/lib/supabase/server'
 import BudgetGrid from '@/components/kbcbp/budget-grid'
 
 const ALL_MONTHS = [
-  'JAN 2025','FEB 2025','MAR 2025','APR 2025','MAY 2025','JUN 2025',
-  'JUL 2025','AUG 2025','SEP 2025','OCT 2025','NOV 2025','DEC 2025',
+  'DEC 2025',
   'JAN 2026','FEB 2026','MAR 2026','APR 2026','MAY 2026','JUN 2026',
   'JUL 2026','AUG 2026','SEP 2026','OCT 2026','NOV 2026','DEC 2026',
 ]
 
-function getVisibleMonths(current: string) {
-  const idx = ALL_MONTHS.indexOf(current)
-  const start = Math.max(0, idx - 4)
-  const end = Math.min(ALL_MONTHS.length, idx + 2)
-  return ALL_MONTHS.slice(start, end)
-}
-
-function getPrevMonth(current: string) {
-  const idx = ALL_MONTHS.indexOf(current)
-  return idx > 0 ? ALL_MONTHS[idx - 1] : null
-}
-
-function getNextMonth(current: string) {
-  const idx = ALL_MONTHS.indexOf(current)
-  return idx < ALL_MONTHS.length - 1 ? ALL_MONTHS[idx + 1] : null
-}
-
-function AppBar({ currentMonth }: { currentMonth: string }) {
-  const prev = getPrevMonth(currentMonth)
-  const next = getNextMonth(currentMonth)
-
+function AppBar() {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 4, padding: '12px 24px',
-      background: '#FFFFFF', borderBottom: '1px solid #E8E6E1',
-      position: 'sticky', top: 0, zIndex: 100,
-    }}>
-      <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: '-0.3px', marginRight: 12 }}>
+    <div className="flex items-center gap-1 px-6 py-3 sticky top-0 z-50"
+      style={{ background: '#FFFFFF', borderBottom: '1px solid #E8E6E1' }}>
+      <div className="font-semibold text-sm tracking-tight mr-3">
         KB<span style={{ color: '#534AB7' }}>CBP</span>
       </div>
       {[
         { label: 'Budget Entry', href: '/', active: true },
         { label: 'Approvals', href: '/approvals', active: false },
         { label: 'Invoices', href: '/invoices', active: false },
-        { label: 'Reports', href: '#', active: false },
+        { label: 'Admin', href: '/admin', active: false },
       ].map(item => (
-        <Link key={item.label} href={item.href} style={{
-          padding: '5px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500,
-          background: item.active ? '#EEEDFE' : 'transparent',
-          color: item.active ? '#3C3489' : '#6B6A65',
-          textDecoration: 'none',
-        }}>
+        <Link key={item.label} href={item.href}
+          className="px-3 py-1 rounded-md text-[13px] font-medium no-underline"
+          style={{
+            background: item.active ? '#EEEDFE' : 'transparent',
+            color: item.active ? '#3C3489' : '#6B6A65',
+          }}>
           {item.label}
         </Link>
       ))}
-      <div style={{ flex: 1 }} />
-
-      {/* Month selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {prev ? (
-          <Link href={`/?month=${encodeURIComponent(prev)}`} style={{
-            width: 28, height: 28, borderRadius: 6, border: '1px solid #E8E6E1',
-            background: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#6B6A65', fontSize: 14, textDecoration: 'none',
-          }}>&lsaquo;</Link>
-        ) : (
-          <span style={{
-            width: 28, height: 28, borderRadius: 6, border: '1px solid #E8E6E1',
-            background: '#F5F4F1', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#D3D1C7', fontSize: 14,
-          }}>&lsaquo;</span>
-        )}
-        <div style={{
-          fontSize: 13, fontWeight: 600, color: '#3C3489',
-          background: '#EEEDFE', padding: '4px 12px', borderRadius: 6,
-          minWidth: 90, textAlign: 'center',
-        }}>{currentMonth}</div>
-        {next ? (
-          <Link href={`/?month=${encodeURIComponent(next)}`} style={{
-            width: 28, height: 28, borderRadius: 6, border: '1px solid #E8E6E1',
-            background: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#6B6A65', fontSize: 14, textDecoration: 'none',
-          }}>&rsaquo;</Link>
-        ) : (
-          <span style={{
-            width: 28, height: 28, borderRadius: 6, border: '1px solid #E8E6E1',
-            background: '#F5F4F1', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#D3D1C7', fontSize: 14,
-          }}>&rsaquo;</span>
-        )}
+      <div className="flex-1" />
+      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold"
+        style={{ background: '#534AB7', color: 'white' }}>
+        VM
       </div>
-
-      <div style={{ width: 1, height: 20, background: '#E8E6E1', margin: '0 8px' }} />
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%', background: '#534AB7',
-        color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, fontWeight: 600,
-      }}>VM</div>
     </div>
   )
 }
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<{ month?: string }>
-}) {
-  const params = await searchParams
-  const currentMonth = ALL_MONTHS.includes(params.month ?? '')
-    ? params.month!
-    : 'APR 2026'
-
-  const months = getVisibleMonths(currentMonth)
-
+export default async function Home() {
   const supabase = await createClient()
 
   const { data: clients } = await supabase
@@ -122,15 +49,13 @@ export default async function Home({
 
   if (!clients || clients.length === 0) {
     return (
-      <div style={{ background: '#FAF9F7', minHeight: '100vh' }}>
-        <AppBar currentMonth={currentMonth} />
-        <div style={{
-          maxWidth: 600, margin: '80px auto', padding: 40, textAlign: 'center',
-          background: '#FFFFFF', borderRadius: 12, border: '1px solid #E8E6E1',
-        }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No clients found</div>
-          <div style={{ fontSize: 13, color: '#9C9A92' }}>
+      <div className="min-h-screen" style={{ background: '#FAF9F7' }}>
+        <AppBar />
+        <div className="max-w-[600px] mx-auto mt-20 p-10 text-center rounded-xl"
+          style={{ background: '#FFFFFF', border: '1px solid #E8E6E1' }}>
+          <div className="text-4xl mb-3">&#128202;</div>
+          <div className="text-[15px] font-semibold mb-1.5">No clients found</div>
+          <div className="text-[13px]" style={{ color: '#9C9A92' }}>
             Run the seed SQL in Supabase to add demo clients.
           </div>
         </div>
@@ -146,12 +71,12 @@ export default async function Home({
   const { data: allEntries } = await supabase
     .from('budget_entries')
     .select('*')
-    .in('billing_month', months)
+    .in('billing_month', ALL_MONTHS)
 
   const { data: allInvoices } = await supabase
     .from('invoices')
     .select('id, invoice_number, status, billing_month, client_id')
-    .eq('billing_month', currentMonth)
+    .in('billing_month', ALL_MONTHS)
 
   const draftCount = clients.filter(c => {
     const inv = allInvoices?.find(i => i.client_id === c.id)
@@ -173,56 +98,49 @@ export default async function Home({
   }
 
   return (
-    <div style={{ background: '#FAF9F7', minHeight: '100vh', fontFamily: "'DM Sans', -apple-system, sans-serif" }}>
-      <AppBar currentMonth={currentMonth} />
+    <div className="min-h-screen font-sans" style={{ background: '#FAF9F7' }}>
+      <AppBar />
 
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 16, padding: '8px 24px',
-        background: '#F5F4F1', borderBottom: '1px solid #E8E6E1',
-        fontSize: 12, color: '#6B6A65',
-      }}>
-        <span>
-          <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#1D9E75', marginRight: 5 }} />
+      <div className="flex items-center gap-4 px-6 py-2 text-xs"
+        style={{ background: '#F5F4F1', borderBottom: '1px solid #E8E6E1', color: '#6B6A65' }}>
+        <span className="flex items-center gap-1.5">
+          <span className="w-[7px] h-[7px] rounded-full inline-block" style={{ background: '#1D9E75' }} />
           {enteredCount} of {clients.length} clients entered
         </span>
-        <span style={{ width: 1, height: 16, background: '#E8E6E1', display: 'inline-block' }} />
-        <span>
-          <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#EF9F27', marginRight: 5 }} />
+        <span className="w-px h-4 inline-block" style={{ background: '#E8E6E1' }} />
+        <span className="flex items-center gap-1.5">
+          <span className="w-[7px] h-[7px] rounded-full inline-block" style={{ background: '#EF9F27' }} />
           {draftCount} pending entry
         </span>
-        <div style={{ flex: 1 }} />
-        <span style={{
-          fontSize: 11, color: '#3C3489', background: '#EEEDFE',
-          padding: '3px 10px', borderRadius: 4, fontWeight: 500,
-        }}>Enter amounts net of commission</span>
+        <div className="flex-1" />
+        <span className="text-[11px] px-2.5 py-0.5 rounded font-medium"
+          style={{ color: '#3C3489', background: '#EEEDFE' }}>
+          Click a month column to edit
+        </span>
       </div>
 
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px 24px 80px' }}>
+      <div className="max-w-[1400px] mx-auto px-6 py-5 pb-20">
         {grouped.map((g, gi) => (
           <div key={gi}>
             {g.group && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 0 6px', marginTop: 12, marginBottom: 4,
-              }}>
-                <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' }}>{g.group}</div>
-                <div style={{ fontSize: 11, color: '#9C9A92' }}>{g.items.length} projects</div>
+              <div className="flex items-center gap-2.5 pt-2.5 pb-1.5 mt-3 mb-1">
+                <div className="text-[17px] font-semibold tracking-tight">{g.group}</div>
+                <div className="text-[11px]" style={{ color: '#9C9A92' }}>{g.items.length} projects</div>
               </div>
             )}
             {g.items.map(client => {
               const services = (allServices ?? []).filter(s => s.client_id === client.id)
-              const entries = (allEntries ?? []).filter(e => e.client_id === client.id)
-              const invoice = (allInvoices ?? []).find(i => i.client_id === client.id) ?? null
+              const clientEntries = (allEntries ?? []).filter(e => e.client_id === client.id)
+              const clientInvoices = (allInvoices ?? []).filter(i => i.client_id === client.id)
 
               return (
                 <BudgetGrid
                   key={client.id}
                   client={client}
                   services={services}
-                  entries={entries}
-                  months={months}
-                  currentMonth={currentMonth}
-                  invoice={invoice}
+                  entries={clientEntries}
+                  months={ALL_MONTHS}
+                  invoices={clientInvoices}
                 />
               )
             })}

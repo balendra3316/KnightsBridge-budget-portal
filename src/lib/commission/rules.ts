@@ -29,8 +29,8 @@ export function computeInvoice(
   const lineItems = lines.filter(l => !l.parent_service_id)
 
   const feeLines = sum(lineItems.filter(l => l.service_type !== 'ad'))
-  const clientCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'client'))
-  const kbCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'kb'))
+  const clientCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'Client Card'))
+  const kbCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'KB Card'))
   const monthlyTotal = sum(lineItems)
 
   let commission = 0
@@ -61,7 +61,7 @@ export function defaultPattern(
   lines: { service_type: string; credit_card: string }[],
   rate: number
 ): Pattern {
-  const hasKbAd = lines.some(l => l.service_type === 'ad' && l.credit_card === 'kb')
+  const hasKbAd = lines.some(l => l.service_type === 'ad' && l.credit_card === 'KB Card')
   if (hasKbAd) return 'B'
   if (rate > 0) return 'A'
   return 'C'

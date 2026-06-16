@@ -1,41 +1,15 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-
-  /* KBCBP design tokens */
-  --kb-bg: #FAF9F7;
-  --kb-surface: #FFFFFF;
-  --kb-surface-alt: #F5F4F1;
-  --kb-border: #E8E6E1;
-  --kb-border-strong: #D3D1C7;
-  --kb-text: #1A1A18;
-  --kb-text-secondary: #6B6A65;
-  --kb-text-tertiary: #9C9A92;
-  --kb-accent: #534AB7;
-  --kb-accent-light: #EEEDFE;
-  --kb-accent-text: #3C3489;
-  --kb-blue: #185FA5;
-  --kb-blue-light: #E6F1FB;
-  --kb-green: #0F6E56;
-  --kb-green-light: #E1F5EE;
-  --kb-amber: #854F0B;
-  --kb-amber-light: #FAEEDA;
-  --kb-red: #A32D2D;
-  --kb-red-light: #FCEBEB;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: #ffffff;
+  --color-foreground: #171717;
   --font-sans: var(--font-dm-sans), var(--font-geist-sans);
   --font-mono: var(--font-dm-mono), var(--font-geist-mono);
 }
 
 body {
-  background: var(--kb-bg);
-  color: var(--kb-text);
+  background: #FAF9F7;
+  color: #1A1A18;
   font-family: var(--font-sans), 'DM Sans', -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }

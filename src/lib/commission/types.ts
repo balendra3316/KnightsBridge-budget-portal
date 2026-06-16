@@ -10,7 +10,7 @@ export type Pattern = 'A' | 'B' | 'C'
 // tracking-only breakdowns for the freelancer and are NEVER counted financially.
 export type BudgetLine = {
   service_type: string          // 'fee' | 'ad' | 'seo'
-  credit_card: string           // 'na' | 'client' | 'kb'
+  credit_card: string           // '' | 'Client Card' | 'KB Card'
   parent_service_id: string | null
   amount: number
 }

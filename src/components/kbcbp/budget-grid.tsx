@@ -1,265 +1,229 @@
 'use client'
 
 import { useState, useTransition, useRef } from 'react'
-import { saveBudgetEntries, createDraftFromBudget, sendForReview } from '@/app/budget/actions'
+import {
+  saveBudgetEntries, createDraftFromBudget, sendForReview,
+  addService, addSubService,
+} from '@/app/budget/actions'
 import {
   computeInvoice, defaultPattern, PATTERN_OPTIONS, RATE_OPTIONS, type Pattern,
 } from '@/lib/commission'
 
 type Service = {
-  id: string
-  service_name: string
-  service_type: string
-  credit_card: string
-  parent_service_id: string | null
-  sort_order: number
+  id: string; service_name: string; service_type: string
+  credit_card: string; parent_service_id: string | null; sort_order: number
 }
-
-type BudgetEntry = {
-  service_id: string
-  billing_month: string
-  amount: number
-}
-
-type InvoiceInfo = {
-  id: string
-  invoice_number: string
-  status: string
-  billing_month: string
-} | null
-
+type BudgetEntry = { service_id: string; billing_month: string; amount: number }
+type InvoiceInfo = { id: string; invoice_number: string; status: string; billing_month: string }
 type Client = {
-  id: string
-  name: string
-  project_name: string | null
-  parent_group: string | null
-  region: string | null
-  tags: string[] | null
-  team: string | null
-  commission_rate: number
-  billing_pattern: string
-  notes: string[] | null
+  id: string; name: string; project_name: string | null; parent_group: string | null
+  region: string | null; tags: string[] | null; team: string | null
+  commission_rate: number; billing_pattern: string; notes: string[] | null
 }
-
 type Props = {
-  client: Client
-  services: Service[]
-  entries: BudgetEntry[]
-  months: string[]
-  currentMonth: string
-  invoice: InvoiceInfo
+  client: Client; services: Service[]; entries: BudgetEntry[]
+  months: string[]; invoices: InvoiceInfo[]
 }
 
-const CC_LABELS: Record<string, { label: string; bg: string; color: string } | null> = {
-  kb:     { label: 'KB CARD', bg: '#FCEBEB', color: '#A32D2D' },
-  client: { label: 'CLIENT',  bg: '#E6F1FB', color: '#185FA5' },
-  na:     null,
+const CC_MAP: Record<string, { label: string; bg: string; color: string } | null> = {
+  'KB Card':     { label: 'KB CARD',     bg: '#FCEBEB', color: '#A32D2D' },
+  'Client Card': { label: 'CLIENT CARD', bg: '#E6F1FB', color: '#185FA5' },
+  '':            null,
 }
-
-const SVC_COLORS: Record<string, string> = {
-  fee: '#854F0B',
-  ad:  '#993C1D',
-  seo: '#0F6E56',
-}
-
-const selectStyle: React.CSSProperties = {
-  padding: '4px 8px', borderRadius: 6, border: '1px solid #D3D1C7',
-  background: '#FFFFFF', fontSize: 11, fontWeight: 600, color: '#3C3489',
-  fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
-}
-
-const REGION_TAGS: Record<string, { bg: string; color: string }> = {
-  'New York':     { bg: '#E6F1FB', color: '#185FA5' },
-  'New Jersey':   { bg: '#EEEDFE', color: '#534AB7' },
-  'California':   { bg: '#FAECE7', color: '#993C1D' },
-}
+const SVC_DOT: Record<string, string> = { fee: '#854F0B', ad: '#993C1D', seo: '#0F6E56' }
 
 function fmt(n: number) {
   if (n === 0) return '$0'
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
-export default function BudgetGrid({ client, services, entries, months, currentMonth, invoice }: Props) {
+export default function BudgetGrid({ client, services, entries, months, invoices }: Props) {
   const [isPending, startTransition] = useTransition()
   const [msg, setMsg] = useState<string | null>(null)
   const amountsRef = useRef<Record<string, number>>({})
-
-  // Initialize amounts from entries for the current month
-  const getAmount = (serviceId: string, month: string): number => {
-    const entry = entries.find(e => e.service_id === serviceId && e.billing_month === month)
-    return entry ? Number(entry.amount) : 0
-  }
-
-  // Track live edits for current month
-  const getCurrentAmount = (serviceId: string): number => {
-    if (amountsRef.current[serviceId] !== undefined) return amountsRef.current[serviceId]
-    return getAmount(serviceId, currentMonth)
-  }
-
+  const [activeMonth, setActiveMonth] = useState<string | null>(null)
   const [, forceRender] = useState(0)
 
-  const updateAmount = (serviceId: string, value: number) => {
-    amountsRef.current[serviceId] = value
+  const [showAddSvc, setShowAddSvc] = useState(false)
+  const [newSvcName, setNewSvcName] = useState('')
+  const [newSvcType, setNewSvcType] = useState<'fee' | 'ad' | 'seo'>('fee')
+  const [newSvcCC, setNewSvcCC] = useState('')
+  const [newSvcParentId, setNewSvcParentId] = useState('')
+
+  const parentAdServices = services.filter(s => !s.parent_service_id && s.service_type === 'ad')
+
+  const getAmount = (svcId: string, month: string): number => {
+    const e = entries.find(x => x.service_id === svcId && x.billing_month === month)
+    return e ? Number(e.amount) : 0
+  }
+  const getCurrentAmount = (svcId: string): number => {
+    if (!activeMonth) return 0
+    if (amountsRef.current[svcId] !== undefined) return amountsRef.current[svcId]
+    return getAmount(svcId, activeMonth)
+  }
+  const updateAmount = (svcId: string, value: number) => {
+    amountsRef.current[svcId] = value
     forceRender(n => n + 1)
   }
+  const handleMonthClick = (month: string) => {
+    if (activeMonth === month) return
+    amountsRef.current = {}
+    setActiveMonth(month)
+    setMsg(null)
+  }
 
-  // Pattern + rate are picked from the dropdowns; pre-filled from the client's config.
   const [pattern, setPattern] = useState<Pattern>(
     defaultPattern(services, (Number(client.commission_rate) || 0) / 100)
   )
   const [rate, setRate] = useState<number>((Number(client.commission_rate) || 0) / 100)
 
-  // Monthly total excludes sub-lines (parent_service_id != null), matching the sheet.
   const computeMonthTotal = (month: string) =>
-    services
-      .filter(svc => !svc.parent_service_id)
-      .reduce((sum, svc) => sum + getAmount(svc.id, month), 0)
+    services.filter(s => !s.parent_service_id).reduce((sum, s) => sum + getAmount(s.id, month), 0)
 
-  // Run the commission engine over the current month's lines.
-  const currentLines = services.map(svc => ({
-    service_type: svc.service_type,
-    credit_card: svc.credit_card,
-    parent_service_id: svc.parent_service_id,
-    amount: getCurrentAmount(svc.id),
-  }))
-  const calc = computeInvoice(currentLines, pattern, rate)
-  const currentTotal = calc.monthlyTotal
+  const currentLines = activeMonth ? services.map(s => ({
+    service_type: s.service_type, credit_card: s.credit_card,
+    parent_service_id: s.parent_service_id, amount: getCurrentAmount(s.id),
+  })) : []
+  const calc = activeMonth
+    ? computeInvoice(currentLines, pattern, rate)
+    : { feeLines: 0, clientCardAd: 0, kbCardAd: 0, monthlyTotal: 0, commission: 0, invoiceTotal: 0, netSpend: 0, kbKeeps: 0 }
 
+  const activeInvoice = activeMonth ? invoices.find(i => i.billing_month === activeMonth) ?? null : null
+  const invoiceStatus = activeInvoice?.status
+  const editable = activeMonth && (!activeInvoice || invoiceStatus === 'draft' || invoiceStatus === 'rejected')
+
+  const handleSave = () => {
+    if (!activeMonth) return
+    setMsg(null)
+    startTransition(async () => {
+      const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
+      const r = await saveBudgetEntries(client.id, activeMonth, ents)
+      setMsg(r.error || 'Saved')
+    })
+  }
   const handleSaveAndDraft = () => {
+    if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
-      const ents = services.map(svc => ({
-        service_id: svc.id,
-        amount: getCurrentAmount(svc.id),
-      }))
-      const saveResult = await saveBudgetEntries(client.id, currentMonth, ents)
-      if (saveResult.error) { setMsg(saveResult.error); return }
-
-      const draftResult = await createDraftFromBudget(client.id, currentMonth, pattern, rate)
-      if (draftResult.error) { setMsg(draftResult.error); return }
-      setMsg('Draft invoice created')
+      const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
+      const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
+      if (r1.error) { setMsg(r1.error); return }
+      const r2 = await createDraftFromBudget(client.id, activeMonth, pattern, rate)
+      setMsg(r2.error || 'Draft invoice created')
     })
   }
-
   const handleSendReview = () => {
+    if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
-      const result = await sendForReview(client.id, currentMonth)
+      const r = await sendForReview(client.id, activeMonth)
+      setMsg(r.error || 'Sent for review')
+    })
+  }
+  const handleResubmit = () => {
+    if (!activeMonth) return
+    setMsg(null)
+    startTransition(async () => {
+      const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
+      const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
+      if (r1.error) { setMsg(r1.error); return }
+      const r2 = await sendForReview(client.id, activeMonth)
+      setMsg(r2.error || 'Resent for approval')
+    })
+  }
+  const handleAddService = () => {
+    if (!newSvcName.trim()) return
+    startTransition(async () => {
+      const result = newSvcParentId
+        ? await addSubService(client.id, newSvcParentId, newSvcName.trim())
+        : await addService(client.id, newSvcName.trim(), newSvcType, newSvcCC)
       if (result.error) { setMsg(result.error); return }
-      setMsg('Sent for review')
+      setNewSvcName(''); setNewSvcType('fee'); setNewSvcCC(''); setNewSvcParentId('')
+      setShowAddSvc(false)
     })
   }
 
-  const regionTag = client.region ? REGION_TAGS[client.region] : null
-  const invoiceStatus = invoice?.status
-
-  // Budget cells are editable until the invoice is committed. Once it's out for
-  // review / approved / sent, the numbers are locked. A rejected invoice reopens
-  // for editing so it can be fixed and resubmitted.
-  const editable = !invoice || invoiceStatus === 'draft' || invoiceStatus === 'rejected'
-
-  const handleResubmit = () => {
-    setMsg(null)
-    startTransition(async () => {
-      const ents = services.map(svc => ({
-        service_id: svc.id,
-        amount: getCurrentAmount(svc.id),
-      }))
-      const saveResult = await saveBudgetEntries(client.id, currentMonth, ents)
-      if (saveResult.error) { setMsg(saveResult.error); return }
-
-      const result = await sendForReview(client.id, currentMonth)
-      if (result.error) { setMsg(result.error); return }
-      setMsg('Resent for approval')
-    })
+  const selectCss: React.CSSProperties = {
+    padding: '4px 8px', borderRadius: 6, border: '1px solid #D3D1C7',
+    background: '#FFFFFF', fontSize: 11, fontWeight: 600, color: '#3C3489',
+    fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
   }
 
   return (
-    <div style={{
-      background: '#FFFFFF', borderRadius: 12, border: '1px solid #E8E6E1',
-      marginBottom: 16, overflow: 'hidden',
-    }}>
-      {/* Client header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px',
-        borderBottom: '1px solid #E8E6E1', background: '#F5F4F1', flexWrap: 'wrap',
-      }}>
-        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.3px' }}>
-          {client.name}
-        </div>
+    <div className="rounded-xl mb-4 overflow-hidden"
+      style={{ background: '#FFFFFF', border: '1px solid #E8E6E1' }}>
+
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-5 py-3 flex-wrap"
+        style={{ borderBottom: '1px solid #E8E6E1', background: '#F5F4F1' }}>
+        <div className="text-[15px] font-semibold tracking-tight">{client.name}</div>
         {client.project_name && (
-          <div style={{ fontSize: 13, fontWeight: 500, color: '#6B6A65' }}>
+          <div className="text-[13px] font-medium" style={{ color: '#6B6A65' }}>
             <span style={{ color: '#9C9A92' }}>/ </span>{client.project_name}
           </div>
         )}
-        {regionTag && (
-          <span style={{
-            padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 600,
-            letterSpacing: '0.3px', textTransform: 'uppercase' as const,
-            background: regionTag.bg, color: regionTag.color,
-          }}>{client.region}</span>
+        {client.region && (
+          <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase"
+            style={{ background: '#E6F1FB', color: '#185FA5' }}>
+            {client.region}
+          </span>
         )}
         {client.tags?.map(tag => (
-          <span key={tag} style={{
-            padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 600,
-            letterSpacing: '0.3px', textTransform: 'uppercase' as const,
-            background: '#FAECE7', color: '#993C1D',
-          }}>{tag}</span>
+          <span key={tag} className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase"
+            style={{ background: '#FAECE7', color: '#993C1D' }}>
+            {tag}
+          </span>
         ))}
-        <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: '#9C9A92' }}>
-          Team: <strong style={{ color: '#6B6A65', fontWeight: 500 }}>{client.team}</strong>
+        <div className="flex-1" />
+        <div className="text-xs" style={{ color: '#9C9A92' }}>
+          Team: <strong className="font-medium" style={{ color: '#6B6A65' }}>{client.team}</strong>
         </div>
       </div>
 
       {/* Notes */}
       {client.notes && client.notes.length > 0 && (
-        <div style={{
-          padding: '8px 20px', borderBottom: '1px solid #E8E6E1',
-          display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
-        }}>
+        <div className="px-5 py-2 flex gap-3 items-center flex-wrap"
+          style={{ borderBottom: '1px solid #E8E6E1' }}>
           {client.notes.map((note, i) => (
-            <span key={i} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
-              background: '#F5F4F1', color: '#6B6A65', border: '1px solid #E8E6E1',
-            }}>{note}</span>
+            <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium"
+              style={{ background: '#F5F4F1', color: '#6B6A65', border: '1px solid #E8E6E1' }}>
+              {note}
+            </span>
           ))}
         </div>
       )}
 
-      {/* Budget grid table */}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      {/* Grid */}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              <th style={{
-                padding: '8px 12px', textAlign: 'left', fontWeight: 500, fontSize: 11,
-                textTransform: 'uppercase' as const, letterSpacing: '0.4px', color: '#9C9A92',
-                borderBottom: '1px solid #E8E6E1', minWidth: 240,
-              }}>Service</th>
-              <th style={{
-                padding: '8px 12px', textAlign: 'center', fontWeight: 500, fontSize: 11,
-                textTransform: 'uppercase' as const, letterSpacing: '0.4px', color: '#9C9A92',
-                borderBottom: '1px solid #E8E6E1', minWidth: 70,
-              }}>CC</th>
+              <th className="px-3 py-2 text-left font-medium text-[11px] uppercase tracking-wider min-w-[240px] sticky left-0 z-[2]"
+                style={{ color: '#9C9A92', borderBottom: '1px solid #E8E6E1', background: '#FFFFFF' }}>
+                Service
+              </th>
+              <th className="px-3 py-2 text-center font-medium text-[11px] uppercase tracking-wider min-w-[85px] sticky left-[240px] z-[2]"
+                style={{ color: '#9C9A92', borderBottom: '1px solid #E8E6E1', background: '#FFFFFF' }}>
+                CC
+              </th>
               {months.map(m => {
-                const isCurrent = m === currentMonth
+                const isActive = m === activeMonth
+                const inv = invoices.find(i => i.billing_month === m)
                 return (
-                  <th key={m} style={{
-                    padding: '8px 12px', textAlign: 'right', fontWeight: isCurrent ? 600 : 500,
-                    fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.4px',
-                    color: isCurrent ? '#854F0B' : '#9C9A92',
-                    borderBottom: '1px solid #E8E6E1', whiteSpace: 'nowrap',
-                    background: isCurrent ? '#FFFBEB' : '#FFFFFF',
-                  }}>
-                    {m}
-                    <span style={{
-                      display: 'block', fontSize: 9, fontWeight: 500,
-                      letterSpacing: '0.2px', textTransform: 'none' as const, marginTop: 2,
-                      color: isCurrent ? '#B07D0A' : '#9C9A92',
+                  <th key={m} onClick={() => handleMonthClick(m)}
+                    className="px-3 py-2 text-right text-[11px] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none min-w-[100px]"
+                    style={{
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? '#854F0B' : '#9C9A92',
+                      borderBottom: '1px solid #E8E6E1',
+                      background: isActive ? '#FFFBEB' : '#FFFFFF',
+                      transition: 'background 0.15s, color 0.15s',
                     }}>
-                      {isCurrent ? (editable ? 'Budget entry' : 'Locked') : 'Submitted'}
+                    {m}
+                    <span className="block text-[9px] font-medium tracking-normal normal-case mt-0.5"
+                      style={{ color: isActive ? '#B07D0A' : inv ? '#0F6E56' : '#C4C2B8' }}>
+                      {isActive ? (editable ? 'Editing' : 'Locked')
+                        : inv ? inv.status : 'Click to edit'}
                     </span>
                   </th>
                 )
@@ -268,135 +232,159 @@ export default function BudgetGrid({ client, services, entries, months, currentM
           </thead>
           <tbody>
             {services.map(svc => {
-              const isSubLine = !!svc.parent_service_id
+              const isSub = !!svc.parent_service_id
               return (
-              <tr key={svc.id}>
-                {/* Service name */}
-                <td style={{
-                  padding: '6px 12px', borderBottom: '1px solid #E8E6E1',
-                  fontSize: 13, color: isSubLine ? '#9C9A92' : '#1A1A18',
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    paddingLeft: isSubLine ? 20 : 0,
-                  }}>
-                    {isSubLine ? (
-                      <span style={{ color: '#C4C2B8', flexShrink: 0 }}>&#8627;</span>
+                <tr key={svc.id}>
+                  <td className="px-3 py-1.5 sticky left-0 z-[1]"
+                    style={{ borderBottom: '1px solid #E8E6E1', color: isSub ? '#9C9A92' : '#1A1A18', background: '#FFFFFF' }}>
+                    <div className="flex items-center gap-2" style={{ paddingLeft: isSub ? 20 : 0 }}>
+                      {isSub ? (
+                        <span className="shrink-0" style={{ color: '#C4C2B8' }}>&#8627;</span>
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-sm shrink-0"
+                          style={{ background: SVC_DOT[svc.service_type] ?? '#9C9A92' }} />
+                      )}
+                      <span className="flex-1">{svc.service_name}</span>
+                      {isSub && (
+                        <span className="text-[9px] font-semibold tracking-wide uppercase rounded px-1 py-px"
+                          style={{ color: '#B4B2A9', border: '1px solid #E8E6E1' }}>
+                          sub
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-1.5 text-center sticky left-[240px] z-[1]"
+                    style={{ borderBottom: '1px solid #E8E6E1', background: '#FFFFFF' }}>
+                    {CC_MAP[svc.credit_card] ? (
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide"
+                        style={{ background: CC_MAP[svc.credit_card]!.bg, color: CC_MAP[svc.credit_card]!.color }}>
+                        {CC_MAP[svc.credit_card]!.label}
+                      </span>
                     ) : (
-                      <span style={{
-                        width: 6, height: 6, borderRadius: 2, flexShrink: 0,
-                        background: SVC_COLORS[svc.service_type] ?? '#9C9A92',
-                      }} />
+                      <span className="text-[11px]" style={{ color: '#9C9A92' }}>&mdash;</span>
                     )}
-                    {svc.service_name}
-                    {isSubLine && (
-                      <span style={{
-                        fontSize: 9, fontWeight: 600, letterSpacing: '0.3px',
-                        textTransform: 'uppercase' as const, color: '#B4B2A9',
-                        border: '1px solid #E8E6E1', borderRadius: 3, padding: '1px 4px',
-                      }}>not counted</span>
-                    )}
-                  </div>
-                </td>
-                {/* Credit card */}
-                <td style={{
-                  padding: '6px 12px', textAlign: 'center', borderBottom: '1px solid #E8E6E1',
-                  fontSize: 13,
-                }}>
-                  {CC_LABELS[svc.credit_card] ? (
-                    <span style={{
-                      display: 'inline-block', padding: '2px 6px', borderRadius: 4,
-                      fontSize: 10, fontWeight: 600, letterSpacing: '0.3px',
-                      background: CC_LABELS[svc.credit_card]!.bg,
-                      color: CC_LABELS[svc.credit_card]!.color,
-                    }}>{CC_LABELS[svc.credit_card]!.label}</span>
-                  ) : (
-                    <span style={{ color: '#9C9A92', fontSize: 11 }}>&mdash;</span>
-                  )}
-                </td>
-                {/* Month columns */}
-                {months.map(m => {
-                  const isCurrent = m === currentMonth
-                  if (isCurrent) {
-                    const cellAmt = getCurrentAmount(svc.id)
+                  </td>
+                  {months.map(m => {
+                    const isActive = m === activeMonth
+                    if (isActive && editable) {
+                      return (
+                        <td key={m} className="px-3 py-1.5 text-right"
+                          style={{ borderBottom: '1px solid #E8E6E1', background: '#FFFBEB' }}>
+                          <EditableCell defaultValue={getCurrentAmount(svc.id)} onChange={v => updateAmount(svc.id, v)} />
+                        </td>
+                      )
+                    }
+                    const amt = getAmount(svc.id, m)
                     return (
-                      <td key={m} style={{
-                        padding: '6px 12px', textAlign: 'right', borderBottom: '1px solid #E8E6E1',
-                        background: '#FFFBEB',
-                      }}>
-                        {editable ? (
-                          <EditableCell
-                            defaultValue={cellAmt}
-                            onChange={val => updateAmount(svc.id, val)}
-                          />
-                        ) : (
-                          <span style={{
-                            fontFamily: "'DM Mono', monospace", fontSize: 12,
-                            color: '#6B6A65', fontWeight: 500,
-                          }}>
-                            {cellAmt > 0 ? fmt(cellAmt) : <span style={{ color: '#9C9A92' }}>&mdash;</span>}
-                          </span>
-                        )}
+                      <td key={m} className="px-3 py-1.5 text-right font-mono text-xs whitespace-nowrap"
+                        style={{ borderBottom: '1px solid #E8E6E1', color: '#6B6A65', background: isActive ? '#FFFBEB' : undefined }}>
+                        {amt > 0 ? fmt(amt) : <span style={{ color: '#9C9A92' }}>&mdash;</span>}
                       </td>
                     )
-                  }
-                  const amt = getAmount(svc.id, m)
-                  return (
-                    <td key={m} style={{
-                      padding: '6px 12px', textAlign: 'right', borderBottom: '1px solid #E8E6E1',
-                      fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#6B6A65',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {amt > 0 ? fmt(amt) : <span style={{ color: '#9C9A92' }}>&mdash;</span>}
-                    </td>
-                  )
-                })}
-              </tr>
+                  })}
+                </tr>
               )
             })}
+
+            {/* Add service */}
+            {showAddSvc ? (
+              <tr>
+                <td colSpan={2 + months.length} className="px-3 py-2"
+                  style={{ borderBottom: '1px solid #E8E6E1' }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input autoFocus placeholder="Service name" value={newSvcName}
+                      onChange={e => setNewSvcName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAddService() }}
+                      className="flex-1 min-w-[160px] px-2.5 py-1.5 rounded text-xs font-sans outline-none"
+                      style={{ border: '1px solid #D3D1C7' }}
+                    />
+                    <select value={newSvcParentId}
+                      onChange={e => { setNewSvcParentId(e.target.value); if (e.target.value) { setNewSvcType('fee'); setNewSvcCC('') } }}
+                      style={selectCss}>
+                      <option value="">Top-level service</option>
+                      {parentAdServices.map(p => (
+                        <option key={p.id} value={p.id}>Sub of: {p.service_name}</option>
+                      ))}
+                    </select>
+                    {!newSvcParentId && (
+                      <>
+                        <select value={newSvcType} onChange={e => setNewSvcType(e.target.value as 'fee' | 'ad' | 'seo')} style={selectCss}>
+                          <option value="fee">Fee</option>
+                          <option value="ad">Ad Spend</option>
+                          <option value="seo">SEO</option>
+                        </select>
+                        <select value={newSvcCC} onChange={e => setNewSvcCC(e.target.value)} style={selectCss}>
+                          <option value="">No Card</option>
+                          <option value="Client Card">Client Card</option>
+                          <option value="KB Card">KB Card</option>
+                        </select>
+                      </>
+                    )}
+                    <button onClick={handleAddService} disabled={isPending || !newSvcName.trim()}
+                      className="px-3.5 py-1.5 rounded text-xs font-semibold cursor-pointer disabled:opacity-50"
+                      style={{ background: '#534AB7', color: 'white', border: 'none' }}>
+                      Add
+                    </button>
+                    <button onClick={() => { setShowAddSvc(false); setNewSvcName(''); setNewSvcParentId('') }}
+                      className="px-3 py-1.5 rounded text-xs cursor-pointer"
+                      style={{ border: '1px solid #E8E6E1', background: '#F5F4F1', color: '#6B6A65' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              <tr>
+                <td colSpan={2 + months.length} className="px-3 py-1.5"
+                  style={{ borderBottom: '1px solid #E8E6E1' }}>
+                  <button onClick={() => setShowAddSvc(true)}
+                    className="px-3 py-1 rounded text-[11px] font-semibold cursor-pointer"
+                    style={{ border: '1px dashed #D3D1C7', background: 'transparent', color: '#9C9A92' }}>
+                    + Add Service / Sub-Service
+                  </button>
+                </td>
+              </tr>
+            )}
+
             {/* Total row */}
             <tr>
-              <td style={{
-                padding: '8px 12px', fontWeight: 600, fontSize: 13, color: '#1A1A18',
-                borderTop: '2px solid #D3D1C7',
-              }}>Monthly total</td>
-              <td style={{ borderTop: '2px solid #D3D1C7' }} />
+              <td className="px-3 py-2 font-semibold text-[13px] sticky left-0 z-[1]"
+                style={{ color: '#1A1A18', borderTop: '2px solid #D3D1C7', background: '#FFFFFF' }}>
+                Monthly total
+              </td>
+              <td className="sticky left-[240px] z-[1]"
+                style={{ borderTop: '2px solid #D3D1C7', background: '#FFFFFF' }} />
               {months.map(m => {
-                const isCurrent = m === currentMonth
-                const total = isCurrent ? currentTotal : computeMonthTotal(m)
+                const isActive = m === activeMonth
+                const total = isActive ? calc.monthlyTotal : computeMonthTotal(m)
                 return (
-                  <td key={m} style={{
-                    padding: '8px 12px', textAlign: 'right', fontWeight: 600,
-                    fontFamily: "'DM Mono', monospace", fontSize: 12,
-                    color: isCurrent ? '#3C3489' : '#1A1A18',
-                    borderTop: '2px solid #D3D1C7',
-                    background: isCurrent ? '#FFFBEB' : undefined,
-                  }}>
+                  <td key={m} className="px-3 py-2 text-right font-semibold font-mono text-xs"
+                    style={{
+                      color: isActive ? '#3C3489' : '#1A1A18',
+                      borderTop: '2px solid #D3D1C7',
+                      background: isActive ? '#FFFBEB' : undefined,
+                    }}>
                     {total > 0 ? fmt(total) : '—'}
                   </td>
                 )
               })}
             </tr>
-            {/* Invoice status row */}
+
+            {/* Invoice row */}
             <tr>
-              <td style={{
-                padding: '4px 12px 8px', fontWeight: 500, color: '#9C9A92',
-                textTransform: 'uppercase' as const, letterSpacing: '0.3px', fontSize: 10,
-              }}>Invoice</td>
-              <td />
+              <td className="px-3 py-1 pb-2 font-medium uppercase tracking-wide text-[10px] sticky left-0 z-[1]"
+                style={{ color: '#9C9A92', background: '#FFFFFF' }}>
+                Invoice
+              </td>
+              <td className="sticky left-[240px] z-[1]" style={{ background: '#FFFFFF' }} />
               {months.map(m => {
-                const isCurrent = m === currentMonth
-                if (!isCurrent) return <td key={m} />
+                const inv = invoices.find(i => i.billing_month === m) ?? null
+                const isActive = m === activeMonth
                 return (
-                  <td key={m} style={{
-                    padding: '4px 12px 8px', textAlign: 'right',
-                    background: '#FFFBEB', fontSize: 11,
-                  }}>
-                    {invoice ? (
-                      <InvoiceStatusBadge status={invoice.status} num={invoice.invoice_number} />
-                    ) : (
-                      <span style={{ color: '#9C9A92' }}>No invoice</span>
-                    )}
+                  <td key={m} className="px-3 py-1 pb-2 text-right text-[11px]"
+                    style={{ background: isActive ? '#FFFBEB' : undefined }}>
+                    {inv ? <InvoiceStatusBadge status={inv.status} num={inv.invoice_number} />
+                      : <span style={{ color: '#C4C2B8', fontSize: 10 }}>—</span>}
                   </td>
                 )
               })}
@@ -405,147 +393,110 @@ export default function BudgetGrid({ client, services, entries, months, currentM
         </table>
       </div>
 
-      {/* Summary strip with action buttons */}
-      <div style={{
-        display: 'flex', gap: 16, padding: '10px 20px',
-        background: '#F5F4F1', borderTop: '1px solid #E8E6E1',
-        fontSize: 12, color: '#6B6A65', alignItems: 'center', flexWrap: 'wrap',
-      }}>
-        {/* Rule selectors — pick the pattern & rate during budget entry */}
-        {!invoice ? (
-          <>
-            <select
-              value={pattern}
-              onChange={e => setPattern(e.target.value as Pattern)}
-              style={selectStyle}
-            >
-              {PATTERN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select
-              value={rate}
-              onChange={e => setRate(parseFloat(e.target.value))}
-              style={selectStyle}
-            >
-              {RATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </>
-        ) : (
-          <span style={{
-            padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600,
-            background: '#EEEDFE', color: '#3C3489',
-          }}>
-            {PATTERN_OPTIONS.find(o => o.value === pattern)?.label} · {rate * 100}%
+      {/* Summary strip */}
+      {activeMonth && (
+        <div className="flex gap-4 px-5 py-2.5 text-xs items-center flex-wrap"
+          style={{ background: '#F5F4F1', borderTop: '1px solid #E8E6E1', color: '#6B6A65' }}>
+          <span className="px-2 py-0.5 rounded text-[11px] font-semibold"
+            style={{ background: '#FFFBEB', color: '#854F0B', border: '1px solid #EFD99B' }}>
+            {activeMonth}
           </span>
-        )}
 
-        <span style={{ width: 1, height: 16, background: '#E8E6E1' }} />
-
-        <div>
-          <span style={{ color: '#9C9A92' }}>Fee </span>
-          <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#1A1A18' }}>
-            {fmt(calc.feeLines)}
-          </span>
-        </div>
-        <div>
-          <span style={{ color: '#9C9A92' }}>Ad spend </span>
-          <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#1A1A18' }}>
-            {fmt(calc.clientCardAd + calc.kbCardAd)}
-          </span>
-        </div>
-        {pattern === 'A' && rate > 0 && (
-          <div>
-            <span style={{ color: '#9C9A92' }}>Commission ({rate * 100}%) </span>
-            <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#0F6E56' }}>
-              {fmt(calc.commission)}
+          {!activeInvoice ? (
+            <>
+              <select value={pattern} onChange={e => setPattern(e.target.value as Pattern)} style={selectCss}>
+                {PATTERN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <select value={rate} onChange={e => setRate(parseFloat(e.target.value))} style={selectCss}>
+                {RATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </>
+          ) : (
+            <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold"
+              style={{ background: '#EEEDFE', color: '#3C3489' }}>
+              {PATTERN_OPTIONS.find(o => o.value === pattern)?.label} &middot; {rate * 100}%
             </span>
-          </div>
-        )}
-        {pattern === 'B' && rate > 0 && (
+          )}
+
+          <span className="w-px h-4" style={{ background: '#E8E6E1' }} />
+
           <div>
-            <span style={{ color: '#9C9A92' }}>Net spend </span>
-            <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#854F0B' }}>
-              {fmt(calc.netSpend)}
-            </span>
+            <span style={{ color: '#9C9A92' }}>Fee </span>
+            <span className="font-semibold font-mono text-[11px]" style={{ color: '#1A1A18' }}>{fmt(calc.feeLines)}</span>
           </div>
-        )}
-        <div>
-          <span style={{ color: '#9C9A92' }}>Monthly total </span>
-          <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#6B6A65' }}>
-            {fmt(calc.monthlyTotal)}
-          </span>
-        </div>
-        <div>
-          <span style={{ color: '#9C9A92' }}>Invoice total </span>
-          <span style={{ fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 13, color: '#3C3489' }}>
-            {fmt(calc.invoiceTotal)}
-          </span>
-        </div>
+          <div>
+            <span style={{ color: '#9C9A92' }}>Ad </span>
+            <span className="font-semibold font-mono text-[11px]" style={{ color: '#1A1A18' }}>{fmt(calc.clientCardAd + calc.kbCardAd)}</span>
+          </div>
+          {pattern === 'A' && rate > 0 && (
+            <div>
+              <span style={{ color: '#9C9A92' }}>Comm ({rate * 100}%) </span>
+              <span className="font-semibold font-mono text-[11px]" style={{ color: '#0F6E56' }}>{fmt(calc.commission)}</span>
+            </div>
+          )}
+          <div>
+            <span style={{ color: '#9C9A92' }}>Invoice </span>
+            <span className="font-bold font-mono text-[13px]" style={{ color: '#3C3489' }}>{fmt(calc.invoiceTotal)}</span>
+          </div>
 
-        <div style={{ flex: 1 }} />
+          <div className="flex-1" />
 
-        {msg && (
-          <span style={{
-            fontSize: 11, padding: '3px 10px', borderRadius: 4,
-            background: msg.includes('error') || msg.includes('No') ? '#FCEBEB' : '#E1F5EE',
-            color: msg.includes('error') || msg.includes('No') ? '#A32D2D' : '#0F6E56',
-            fontWeight: 500,
-          }}>{msg}</span>
-        )}
+          {msg && (
+            <span className="text-[11px] px-2.5 py-0.5 rounded font-medium"
+              style={{
+                background: msg.includes('error') || msg.includes('No') ? '#FCEBEB' : '#E1F5EE',
+                color: msg.includes('error') || msg.includes('No') ? '#A32D2D' : '#0F6E56',
+              }}>{msg}</span>
+          )}
 
-        {isPending ? (
-          <span style={{ fontSize: 11, color: '#9C9A92' }}>Saving…</span>
-        ) : !invoice ? (
-          <button onClick={handleSaveAndDraft} style={{
-            padding: '6px 14px', borderRadius: 6, border: 'none',
-            background: '#534AB7', color: 'white', fontSize: 12,
-            fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-          }}>
-            Create Draft
-          </button>
-        ) : invoiceStatus === 'draft' ? (
-          <button onClick={handleSendReview} style={{
-            padding: '6px 14px', borderRadius: 6, border: 'none',
-            background: '#EEEDFE', color: '#3C3489', fontSize: 12,
-            fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-          }}>
-            Send for Approval
-          </button>
-        ) : invoiceStatus === 'review' ? (
-          <span style={{
-            padding: '3px 10px', borderRadius: 4, fontSize: 11,
-            background: '#FAEEDA', color: '#854F0B', fontWeight: 600,
-          }}>Under Review</span>
-        ) : invoiceStatus === 'approved' ? (
-          <span style={{
-            padding: '3px 10px', borderRadius: 4, fontSize: 11,
-            background: '#E1F5EE', color: '#0F6E56', fontWeight: 600,
-          }}>Approved</span>
-        ) : invoiceStatus === 'sent' ? (
-          <span style={{
-            padding: '3px 10px', borderRadius: 4, fontSize: 11,
-            background: '#E6F1FB', color: '#185FA5', fontWeight: 600,
-          }}>Sent to QuickBooks</span>
-        ) : invoiceStatus === 'rejected' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{
-              padding: '3px 10px', borderRadius: 4, fontSize: 11,
-              background: '#FCEBEB', color: '#A32D2D', fontWeight: 600,
-            }}>Rejected</span>
-            <button onClick={handleResubmit} style={{
-              padding: '6px 14px', borderRadius: 6, border: 'none',
-              background: '#EEEDFE', color: '#3C3489', fontSize: 12,
-              fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-            }}>
-              Resend for Approval
+          {isPending ? (
+            <span className="text-[11px]" style={{ color: '#9C9A92' }}>Saving&hellip;</span>
+          ) : !activeInvoice ? (
+            <div className="flex gap-2">
+              <button onClick={handleSave}
+                className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
+                style={{ border: '1px solid #E8E6E1', background: '#FFFFFF', color: '#6B6A65' }}>
+                Save
+              </button>
+              <button onClick={handleSaveAndDraft}
+                className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
+                style={{ background: '#534AB7', color: 'white', border: 'none' }}>
+                Create Draft
+              </button>
+            </div>
+          ) : invoiceStatus === 'draft' ? (
+            <button onClick={handleSendReview}
+              className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
+              style={{ background: '#EEEDFE', color: '#3C3489', border: 'none' }}>
+              Send for Approval
             </button>
-          </div>
-        ) : null}
-      </div>
+          ) : invoiceStatus === 'review' ? (
+            <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold"
+              style={{ background: '#FAEEDA', color: '#854F0B' }}>Under Review</span>
+          ) : invoiceStatus === 'approved' ? (
+            <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold"
+              style={{ background: '#E1F5EE', color: '#0F6E56' }}>Approved</span>
+          ) : invoiceStatus === 'sent' ? (
+            <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold"
+              style={{ background: '#E6F1FB', color: '#185FA5' }}>Sent to QuickBooks</span>
+          ) : invoiceStatus === 'rejected' ? (
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold"
+                style={{ background: '#FCEBEB', color: '#A32D2D' }}>Rejected</span>
+              <button onClick={handleResubmit}
+                className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
+                style={{ background: '#EEEDFE', color: '#3C3489', border: 'none' }}>
+                Resend for Approval
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
 
-/* ---------- Sub-components ---------- */
+/* ---- Sub-components ---- */
 
 function EditableCell({ defaultValue, onChange }: { defaultValue: number; onChange: (v: number) => void }) {
   const [editing, setEditing] = useState(false)
@@ -561,60 +512,41 @@ function EditableCell({ defaultValue, onChange }: { defaultValue: number; onChan
 
   if (!editing) {
     return (
-      <span
-        onClick={() => setEditing(true)}
-        style={{
-          display: 'inline-block', minWidth: 70, textAlign: 'right', padding: '4px 8px',
-          borderRadius: 4, fontWeight: 500, color: '#3C3489',
-          background: '#E8E5FC', border: '1px dashed #534AB7',
-          fontFamily: "'DM Mono', monospace", fontSize: 12,
-          cursor: 'text', transition: 'all 0.15s',
-        }}
-      >
+      <span onClick={() => setEditing(true)}
+        className="inline-block min-w-[70px] text-right px-2 py-1 rounded font-medium font-mono text-xs cursor-text"
+        style={{ color: '#3C3489', background: '#E8E5FC', border: '1px dashed #534AB7', transition: 'all 0.15s' }}>
         {fmt(defaultValue)}
       </span>
     )
   }
 
   return (
-    <input
-      autoFocus
-      value={raw}
-      onChange={e => setRaw(e.target.value)}
-      onBlur={commit}
+    <input autoFocus value={raw}
+      onChange={e => setRaw(e.target.value)} onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') commit() }}
-      style={{
-        width: 90, textAlign: 'right', padding: '4px 8px', borderRadius: 4,
-        border: '1px solid #534AB7', fontFamily: "'DM Mono', monospace", fontSize: 12,
-        outline: 'none', background: '#FFFFFF',
-        boxShadow: '0 0 0 3px rgba(83,74,183,0.15)',
-      }}
+      className="w-[90px] text-right px-2 py-1 rounded font-mono text-xs outline-none"
+      style={{ border: '1px solid #534AB7', background: '#FFFFFF', boxShadow: '0 0 0 3px rgba(83,74,183,0.15)' }}
     />
   )
 }
 
 function InvoiceStatusBadge({ status, num }: { status: string; num: string }) {
-  const cfgs: Record<string, { bg: string; color: string; dot: string; label: string }> = {
-    draft:    { bg: '#F5F4F1', color: '#6B6A65', dot: '#B4B2A9', label: 'Draft' },
-    review:   { bg: '#FAEEDA', color: '#854F0B', dot: '#EF9F27', label: 'Under Review' },
-    approved: { bg: '#E1F5EE', color: '#0F6E56', dot: '#1D9E75', label: 'Approved' },
-    sent:     { bg: '#E6F1FB', color: '#185FA5', dot: '#185FA5', label: 'Sent' },
-    rejected: { bg: '#FCEBEB', color: '#A32D2D', dot: '#E05252', label: 'Rejected' },
+  const colors: Record<string, string> = {
+    draft: '#6B6A65', review: '#854F0B', approved: '#0F6E56', sent: '#185FA5', rejected: '#A32D2D',
   }
-  const cfg = cfgs[status] ?? cfgs.draft
+  const dots: Record<string, string> = {
+    draft: '#B4B2A9', review: '#EF9F27', approved: '#1D9E75', sent: '#185FA5', rejected: '#E05252',
+  }
+  const labels: Record<string, string> = {
+    draft: 'Draft', review: 'Review', approved: 'Approved', sent: 'Sent', rejected: 'Rejected',
+  }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-      <span style={{
-        fontFamily: "'DM Mono', monospace", fontSize: 11,
-        color: '#3C3489', fontWeight: 500,
-      }}>{num}</span>
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-        fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
-        color: cfg.color,
-      }}>
-        <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.dot }} />
-        {cfg.label}
+    <div className="flex flex-col items-end gap-0.5">
+      <span className="font-mono text-[11px] font-medium" style={{ color: '#3C3489' }}>{num}</span>
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold whitespace-nowrap"
+        style={{ color: colors[status] ?? '#6B6A65' }}>
+        <span className="w-[5px] h-[5px] rounded-full inline-block" style={{ background: dots[status] ?? '#B4B2A9' }} />
+        {labels[status] ?? status}
       </span>
     </div>
   )
