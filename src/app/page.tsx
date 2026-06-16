@@ -75,7 +75,7 @@ export default async function Home() {
 
   const { data: allInvoices } = await supabase
     .from('invoices')
-    .select('id, invoice_number, status, billing_month, client_id')
+    .select('id, invoice_number, status, billing_month, client_id, commission_amount, invoice_total, monthly_total')
     .in('billing_month', ALL_MONTHS)
 
   const draftCount = clients.filter(c => {

@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { computeInvoice, type Pattern } from '@/lib/commission'
+import { computeInvoice, billingLabel } from '@/lib/commission'
 
 export async function saveBudgetEntries(
   clientId: string,
@@ -33,7 +33,6 @@ export async function saveBudgetEntries(
 export async function createDraftFromBudget(
   clientId: string,
   billingMonth: string,
-  pattern: Pattern,
   rate: number
 ): Promise<{ error?: string }> {
   const supabase = await createClient()
@@ -67,7 +66,7 @@ export async function createDraftFromBudget(
     }
   })
 
-  const calc = computeInvoice(lines, pattern, rate)
+  const calc = computeInvoice(lines, rate)
 
   // Generate invoice number
   const { count } = await supabase
@@ -84,7 +83,7 @@ export async function createDraftFromBudget(
     billing_month: billingMonth,
     pm_name: client.team,
     commission_rate: rate * 100,
-    billing_pattern: pattern,
+    billing_pattern: billingLabel(calc.clientCardAd, calc.kbCardAd),
     fee_amount: calc.feeLines,
     ad_spend_amount: calc.clientCardAd + calc.kbCardAd,
     commission_amount: calc.commission,
@@ -159,6 +158,40 @@ export async function addSubService(
   })
 
   if (error) return { error: error.message }
+  revalidatePath('/')
+  return {}
+}
+
+export async function deleteService(
+  serviceId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+
+  // Edit-window enforcement is per selected month and handled in the UI (you can only
+  // delete while a draft / unsubmitted month is active). Finalized invoices are stored
+  // as immutable snapshots, so removing a service never changes an existing invoice.
+
+  // Collect this service plus any sub-services it owns.
+  const { data: children } = await supabase
+    .from('client_services')
+    .select('id')
+    .eq('parent_service_id', serviceId)
+
+  const ids = [serviceId, ...(children ?? []).map(c => c.id)]
+
+  // Delete in order (no ON DELETE CASCADE assumption): entries first, then the rows.
+  const { error: entriesErr } = await supabase
+    .from('budget_entries')
+    .delete()
+    .in('service_id', ids)
+  if (entriesErr) return { error: entriesErr.message }
+
+  const { error: svcErr } = await supabase
+    .from('client_services')
+    .delete()
+    .in('id', ids)
+  if (svcErr) return { error: svcErr.message }
+
   revalidatePath('/')
   return {}
 }

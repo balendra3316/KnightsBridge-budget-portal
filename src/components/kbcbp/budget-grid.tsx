@@ -3,18 +3,19 @@
 import { useState, useTransition, useRef } from 'react'
 import {
   saveBudgetEntries, createDraftFromBudget, sendForReview,
-  addService, addSubService,
+  addService, addSubService, deleteService,
 } from '@/app/budget/actions'
-import {
-  computeInvoice, defaultPattern, PATTERN_OPTIONS, RATE_OPTIONS, type Pattern,
-} from '@/lib/commission'
+import { computeInvoice, RATE_OPTIONS } from '@/lib/commission'
 
 type Service = {
   id: string; service_name: string; service_type: string
   credit_card: string; parent_service_id: string | null; sort_order: number
 }
 type BudgetEntry = { service_id: string; billing_month: string; amount: number }
-type InvoiceInfo = { id: string; invoice_number: string; status: string; billing_month: string }
+type InvoiceInfo = {
+  id: string; invoice_number: string; status: string; billing_month: string
+  commission_amount: number | null; invoice_total: number | null; monthly_total: number | null
+}
 type Client = {
   id: string; name: string; project_name: string | null; parent_group: string | null
   region: string | null; tags: string[] | null; team: string | null
@@ -44,13 +45,11 @@ export default function BudgetGrid({ client, services, entries, months, invoices
   const [activeMonth, setActiveMonth] = useState<string | null>(null)
   const [, forceRender] = useState(0)
 
-  const [showAddSvc, setShowAddSvc] = useState(false)
+  const [addMode, setAddMode] = useState<'service' | 'sub' | null>(null)
   const [newSvcName, setNewSvcName] = useState('')
   const [newSvcType, setNewSvcType] = useState<'fee' | 'ad' | 'seo'>('fee')
   const [newSvcCC, setNewSvcCC] = useState('')
   const [newSvcParentId, setNewSvcParentId] = useState('')
-
-  const parentAdServices = services.filter(s => !s.parent_service_id && s.service_type === 'ad')
 
   const getAmount = (svcId: string, month: string): number => {
     const e = entries.find(x => x.service_id === svcId && x.billing_month === month)
@@ -72,9 +71,6 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     setMsg(null)
   }
 
-  const [pattern, setPattern] = useState<Pattern>(
-    defaultPattern(services, (Number(client.commission_rate) || 0) / 100)
-  )
   const [rate, setRate] = useState<number>((Number(client.commission_rate) || 0) / 100)
 
   const computeMonthTotal = (month: string) =>
@@ -85,12 +81,26 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     parent_service_id: s.parent_service_id, amount: getCurrentAmount(s.id),
   })) : []
   const calc = activeMonth
-    ? computeInvoice(currentLines, pattern, rate)
+    ? computeInvoice(currentLines, rate)
     : { feeLines: 0, clientCardAd: 0, kbCardAd: 0, monthlyTotal: 0, commission: 0, invoiceTotal: 0, netSpend: 0, kbKeeps: 0 }
 
   const activeInvoice = activeMonth ? invoices.find(i => i.billing_month === activeMonth) ?? null : null
   const invoiceStatus = activeInvoice?.status
   const editable = activeMonth && (!activeInvoice || invoiceStatus === 'draft' || invoiceStatus === 'rejected')
+
+  // Services can be added/deleted only while the SELECTED month is still editable
+  // (no invoice yet, or draft/rejected). Submitted months (review/approved/sent)
+  // are locked. Old finalized months keep showing their saved invoice snapshot.
+  const canEditServices = !!editable
+
+  // Display order: all top-level services first, then all sub-services below — two
+  // groups, each sorted by sort_order.
+  const orderedServices = (() => {
+    const byOrder = (a: Service, b: Service) => a.sort_order - b.sort_order
+    const tops = services.filter(s => !s.parent_service_id).sort(byOrder)
+    const subs = services.filter(s => s.parent_service_id).sort(byOrder)
+    return [...tops, ...subs]
+  })()
 
   const handleSave = () => {
     if (!activeMonth) return
@@ -108,7 +118,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
       const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
       const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
       if (r1.error) { setMsg(r1.error); return }
-      const r2 = await createDraftFromBudget(client.id, activeMonth, pattern, rate)
+      const r2 = await createDraftFromBudget(client.id, activeMonth, rate)
       setMsg(r2.error || 'Draft invoice created')
     })
   }
@@ -131,15 +141,26 @@ export default function BudgetGrid({ client, services, entries, months, invoices
       setMsg(r2.error || 'Resent for approval')
     })
   }
+  const closeAdd = () => {
+    setAddMode(null); setNewSvcName(''); setNewSvcType('fee'); setNewSvcCC(''); setNewSvcParentId('')
+  }
   const handleAddService = () => {
     if (!newSvcName.trim()) return
+    if (addMode === 'sub' && !newSvcParentId) { setMsg('Pick a parent service'); return }
     startTransition(async () => {
-      const result = newSvcParentId
+      const result = addMode === 'sub'
         ? await addSubService(client.id, newSvcParentId, newSvcName.trim())
         : await addService(client.id, newSvcName.trim(), newSvcType, newSvcCC)
       if (result.error) { setMsg(result.error); return }
-      setNewSvcName(''); setNewSvcType('fee'); setNewSvcCC(''); setNewSvcParentId('')
-      setShowAddSvc(false)
+      closeAdd()
+    })
+  }
+  const handleDelete = (svcId: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This removes its budget amounts and any sub-services.`)) return
+    setMsg(null)
+    startTransition(async () => {
+      const r = await deleteService(svcId)
+      if (r.error) setMsg(r.error)
     })
   }
 
@@ -231,7 +252,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
             </tr>
           </thead>
           <tbody>
-            {services.map(svc => {
+            {orderedServices.map(svc => {
               const isSub = !!svc.parent_service_id
               return (
                 <tr key={svc.id}>
@@ -251,6 +272,15 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                           sub
                         </span>
                       )}
+                      <button onClick={() => handleDelete(svc.id, svc.service_name)}
+                        disabled={isPending || !canEditServices}
+                        title={canEditServices ? 'Delete'
+                          : activeMonth ? 'Locked — this month is already submitted'
+                          : 'Click a draft month to edit services'}
+                        className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-sm leading-none disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        style={{ color: '#C4554D', background: 'transparent', border: 'none' }}>
+                        &times;
+                      </button>
                     </div>
                   </td>
                   <td className="px-3 py-1.5 text-center sticky left-[240px] z-[1]"
@@ -286,85 +316,74 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               )
             })}
 
-            {/* Add service */}
-            {showAddSvc ? (
-              <tr>
-                <td colSpan={2 + months.length} className="px-3 py-2"
-                  style={{ borderBottom: '1px solid #E8E6E1' }}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <input autoFocus placeholder="Service name" value={newSvcName}
-                      onChange={e => setNewSvcName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleAddService() }}
-                      className="flex-1 min-w-[160px] px-2.5 py-1.5 rounded text-xs font-sans outline-none"
-                      style={{ border: '1px solid #D3D1C7' }}
-                    />
-                    <select value={newSvcParentId}
-                      onChange={e => { setNewSvcParentId(e.target.value); if (e.target.value) { setNewSvcType('fee'); setNewSvcCC('') } }}
-                      style={selectCss}>
-                      <option value="">Top-level service</option>
-                      {parentAdServices.map(p => (
-                        <option key={p.id} value={p.id}>Sub of: {p.service_name}</option>
-                      ))}
-                    </select>
-                    {!newSvcParentId && (
-                      <>
-                        <select value={newSvcType} onChange={e => setNewSvcType(e.target.value as 'fee' | 'ad' | 'seo')} style={selectCss}>
-                          <option value="fee">Fee</option>
-                          <option value="ad">Ad Spend</option>
-                          <option value="seo">SEO</option>
-                        </select>
-                        <select value={newSvcCC} onChange={e => setNewSvcCC(e.target.value)} style={selectCss}>
-                          <option value="">No Card</option>
-                          <option value="Client Card">Client Card</option>
-                          <option value="KB Card">KB Card</option>
-                        </select>
-                      </>
-                    )}
-                    <button onClick={handleAddService} disabled={isPending || !newSvcName.trim()}
-                      className="px-3.5 py-1.5 rounded text-xs font-semibold cursor-pointer disabled:opacity-50"
-                      style={{ background: '#534AB7', color: 'white', border: 'none' }}>
-                      Add
-                    </button>
-                    <button onClick={() => { setShowAddSvc(false); setNewSvcName(''); setNewSvcParentId('') }}
-                      className="px-3 py-1.5 rounded text-xs cursor-pointer"
-                      style={{ border: '1px solid #E8E6E1', background: '#F5F4F1', color: '#6B6A65' }}>
-                      Cancel
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              <tr>
-                <td colSpan={2 + months.length} className="px-3 py-1.5"
-                  style={{ borderBottom: '1px solid #E8E6E1' }}>
-                  <button onClick={() => setShowAddSvc(true)}
-                    className="px-3 py-1 rounded text-[11px] font-semibold cursor-pointer"
-                    style={{ border: '1px dashed #D3D1C7', background: 'transparent', color: '#9C9A92' }}>
-                    + Add Service / Sub-Service
-                  </button>
-                </td>
-              </tr>
-            )}
 
-            {/* Total row */}
+            {/* Commission row — saved value per month, or live preview for the active month */}
             <tr>
-              <td className="px-3 py-2 font-semibold text-[13px] sticky left-0 z-[1]"
-                style={{ color: '#1A1A18', borderTop: '2px solid #D3D1C7', background: '#FFFFFF' }}>
-                Monthly total
+              <td className="px-3 py-1.5 font-medium text-[12px] sticky left-0 z-[1]"
+                style={{ color: '#0F6E56', borderTop: '2px solid #D3D1C7', background: '#FFFFFF' }}>
+                Commission
               </td>
               <td className="sticky left-[240px] z-[1]"
                 style={{ borderTop: '2px solid #D3D1C7', background: '#FFFFFF' }} />
               {months.map(m => {
+                const inv = invoices.find(i => i.billing_month === m) ?? null
                 const isActive = m === activeMonth
-                const total = isActive ? calc.monthlyTotal : computeMonthTotal(m)
+                const value = inv ? Number(inv.commission_amount) || 0
+                  : isActive ? calc.commission : 0
+                return (
+                  <td key={m} className="px-3 py-1.5 text-right font-mono text-xs"
+                    style={{
+                      color: '#0F6E56', borderTop: '2px solid #D3D1C7',
+                      background: isActive ? '#FFFBEB' : undefined,
+                    }}>
+                    {value > 0 ? fmt(value) : <span style={{ color: '#C4C2B8' }}>&mdash;</span>}
+                  </td>
+                )
+              })}
+            </tr>
+
+            {/* Monthly total row */}
+            <tr>
+              <td className="px-3 py-2 font-semibold text-[13px] sticky left-0 z-[1]"
+                style={{ color: '#1A1A18', background: '#FFFFFF' }}>
+                Monthly total
+              </td>
+              <td className="sticky left-[240px] z-[1]" style={{ background: '#FFFFFF' }} />
+              {months.map(m => {
+                const isActive = m === activeMonth
+                const inv = invoices.find(i => i.billing_month === m) ?? null
+                // Finalized months show the saved snapshot; otherwise compute live.
+                const total = isActive ? calc.monthlyTotal
+                  : inv && inv.monthly_total != null ? Number(inv.monthly_total)
+                  : computeMonthTotal(m)
                 return (
                   <td key={m} className="px-3 py-2 text-right font-semibold font-mono text-xs"
                     style={{
                       color: isActive ? '#3C3489' : '#1A1A18',
-                      borderTop: '2px solid #D3D1C7',
                       background: isActive ? '#FFFBEB' : undefined,
                     }}>
                     {total > 0 ? fmt(total) : '—'}
+                  </td>
+                )
+              })}
+            </tr>
+
+            {/* Invoice total row — the billed amount, saved per month */}
+            <tr>
+              <td className="px-3 py-2 font-semibold text-[13px] sticky left-0 z-[1]"
+                style={{ color: '#3C3489', background: '#FFFFFF' }}>
+                Invoice total
+              </td>
+              <td className="sticky left-[240px] z-[1]" style={{ background: '#FFFFFF' }} />
+              {months.map(m => {
+                const inv = invoices.find(i => i.billing_month === m) ?? null
+                const isActive = m === activeMonth
+                const value = inv ? Number(inv.invoice_total) || 0
+                  : isActive ? calc.invoiceTotal : 0
+                return (
+                  <td key={m} className="px-3 py-2 text-right font-bold font-mono text-xs"
+                    style={{ color: '#3C3489', background: isActive ? '#FFFBEB' : undefined }}>
+                    {value > 0 ? fmt(value) : <span style={{ color: '#C4C2B8' }}>&mdash;</span>}
                   </td>
                 )
               })}
@@ -393,6 +412,76 @@ export default function BudgetGrid({ client, services, entries, months, invoices
         </table>
       </div>
 
+      {/* Manage services — kept outside the scrolling table so it always fits on screen */}
+      <div className="px-5 py-2.5 flex items-center gap-2 flex-wrap"
+        style={{ borderTop: '1px solid #E8E6E1' }}>
+        {!canEditServices ? (
+          <span className="text-[11px]" style={{ color: '#9C9A92' }}>
+            {activeMonth
+              ? '🔒 This month is submitted — services are locked'
+              : 'Click a draft month to add or remove services'}
+          </span>
+        ) : addMode === null ? (
+          <>
+            <button onClick={() => setAddMode('service')}
+              className="px-3 py-1.5 rounded text-[11px] font-semibold cursor-pointer"
+              style={{ border: '1px dashed #D3D1C7', background: 'transparent', color: '#534AB7' }}>
+              + Add Service
+            </button>
+            <button onClick={() => setAddMode('sub')}
+              className="px-3 py-1.5 rounded text-[11px] font-semibold cursor-pointer"
+              style={{ border: '1px dashed #D3D1C7', background: 'transparent', color: '#9C9A92' }}>
+              + Add Sub-Service
+            </button>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap w-full">
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold"
+              style={{ background: '#EEEDFE', color: '#3C3489' }}>
+              {addMode === 'service' ? 'New service' : 'New sub-service'}
+            </span>
+            <input autoFocus placeholder="Name (any label)" value={newSvcName}
+              onChange={e => setNewSvcName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAddService() }}
+              className="flex-1 min-w-[140px] max-w-[280px] px-2.5 py-1.5 rounded text-xs outline-none"
+              style={{ border: '1px solid #D3D1C7' }}
+            />
+            {addMode === 'service' ? (
+              <>
+                <select value={newSvcType}
+                  onChange={e => setNewSvcType(e.target.value as 'fee' | 'ad' | 'seo')} style={selectCss}>
+                  <option value="fee">Fee</option>
+                  <option value="ad">Ad Spend</option>
+                  <option value="seo">SEO</option>
+                </select>
+                <select value={newSvcCC} onChange={e => setNewSvcCC(e.target.value)} style={selectCss}>
+                  <option value="">No Card</option>
+                  <option value="Client Card">Client Card</option>
+                  <option value="KB Card">KB Card</option>
+                </select>
+              </>
+            ) : (
+              <select value={newSvcParentId} onChange={e => setNewSvcParentId(e.target.value)} style={selectCss}>
+                <option value="">Parent service…</option>
+                {services.filter(s => !s.parent_service_id).map(p => (
+                  <option key={p.id} value={p.id}>{p.service_name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={handleAddService} disabled={isPending || !newSvcName.trim()}
+              className="px-3.5 py-1.5 rounded text-xs font-semibold cursor-pointer disabled:opacity-50"
+              style={{ background: '#534AB7', color: 'white', border: 'none' }}>
+              Add
+            </button>
+            <button onClick={closeAdd}
+              className="px-3 py-1.5 rounded text-xs font-semibold cursor-pointer"
+              style={{ border: '1px solid #D9B0AC', background: '#FCEBEB', color: '#A32D2D' }}>
+                
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Summary strip */}
       {activeMonth && (
         <div className="flex gap-4 px-5 py-2.5 text-xs items-center flex-wrap"
@@ -403,18 +492,16 @@ export default function BudgetGrid({ client, services, entries, months, invoices
           </span>
 
           {!activeInvoice ? (
-            <>
-              <select value={pattern} onChange={e => setPattern(e.target.value as Pattern)} style={selectCss}>
-                {PATTERN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+            <label className="flex items-center gap-1.5">
+              <span style={{ color: '#9C9A92' }}>Commission</span>
               <select value={rate} onChange={e => setRate(parseFloat(e.target.value))} style={selectCss}>
                 {RATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-            </>
+            </label>
           ) : (
             <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold"
               style={{ background: '#EEEDFE', color: '#3C3489' }}>
-              {PATTERN_OPTIONS.find(o => o.value === pattern)?.label} &middot; {rate * 100}%
+              Commission {rate * 100}%
             </span>
           )}
 
@@ -424,20 +511,30 @@ export default function BudgetGrid({ client, services, entries, months, invoices
             <span style={{ color: '#9C9A92' }}>Fee </span>
             <span className="font-semibold font-mono text-[11px]" style={{ color: '#1A1A18' }}>{fmt(calc.feeLines)}</span>
           </div>
-          <div>
-            <span style={{ color: '#9C9A92' }}>Ad </span>
-            <span className="font-semibold font-mono text-[11px]" style={{ color: '#1A1A18' }}>{fmt(calc.clientCardAd + calc.kbCardAd)}</span>
-          </div>
-          {pattern === 'A' && rate > 0 && (
+          {calc.clientCardAd > 0 && (
             <div>
-              <span style={{ color: '#9C9A92' }}>Comm ({rate * 100}%) </span>
+              <span style={{ color: '#9C9A92' }}>Client-Card ad </span>
+              <span className="font-semibold font-mono text-[11px]" style={{ color: '#1A1A18' }}>{fmt(calc.clientCardAd)}</span>
+            </div>
+          )}
+          {calc.kbCardAd > 0 && (
+            <div>
+              <span style={{ color: '#9C9A92' }}>KB-Card ad </span>
+              <span className="font-semibold font-mono text-[11px]" style={{ color: '#1A1A18' }}>{fmt(calc.kbCardAd)}</span>
+            </div>
+          )}
+          {calc.clientCardAd > 0 && rate > 0 && (
+            <div>
+              <span style={{ color: '#9C9A92' }}>Commission </span>
               <span className="font-semibold font-mono text-[11px]" style={{ color: '#0F6E56' }}>{fmt(calc.commission)}</span>
             </div>
           )}
-          <div>
-            <span style={{ color: '#9C9A92' }}>Invoice </span>
-            <span className="font-bold font-mono text-[13px]" style={{ color: '#3C3489' }}>{fmt(calc.invoiceTotal)}</span>
-          </div>
+          {calc.kbCardAd > 0 && rate > 0 && (
+            <div>
+              <span style={{ color: '#9C9A92' }}>KB net spend </span>
+              <span className="font-semibold font-mono text-[11px]" style={{ color: '#854F0B' }}>{fmt(calc.netSpend)}</span>
+            </div>
+          )}
 
           <div className="flex-1" />
 

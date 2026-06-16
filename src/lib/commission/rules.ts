@@ -1,11 +1,4 @@
-import type { Pattern, BudgetLine, InvoiceCalc } from './types'
-
-// Dropdown choices for the budget grid. Rules live here in code, not the database.
-export const PATTERN_OPTIONS: { value: Pattern; label: string }[] = [
-  { value: 'A', label: 'Client Card — fee + commission' },
-  { value: 'B', label: 'KB Card — commission baked in' },
-  { value: 'C', label: 'No commission — fee only' },
-]
+import type { BudgetLine, InvoiceCalc } from './types'
 
 // Rate is stored as a fraction (0.15 = 15%).
 export const RATE_OPTIONS: { value: number; label: string }[] = [
@@ -20,12 +13,14 @@ const sum = (lines: BudgetLine[]) =>
 
 // The single source of truth for invoice math. Pure function — runs identically
 // in the budget grid (live preview) and the server action (authoritative save).
-export function computeInvoice(
-  lines: BudgetLine[],
-  pattern: Pattern,
-  rate: number
-): InvoiceCalc {
-  // Step: skip every sub-line. Only top-level (parent) rows count.
+//
+// The card on each service decides how its spend is billed:
+//   • Client Card ad → client paid the platform directly → invoice only the commission on it.
+//   • KB Card ad     → KB fronted the spend → invoice it in full (commission baked in).
+//   • Fee / SEO      → always invoiced.
+// This handles pure Client-Card, pure KB-Card, and mixed-card clients automatically.
+export function computeInvoice(lines: BudgetLine[], rate: number): InvoiceCalc {
+  // Skip every sub-line. Only top-level (parent) rows count.
   const lineItems = lines.filter(l => !l.parent_service_id)
 
   const feeLines = sum(lineItems.filter(l => l.service_type !== 'ad'))
@@ -33,36 +28,19 @@ export function computeInvoice(
   const kbCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'KB Card'))
   const monthlyTotal = sum(lineItems)
 
-  let commission = 0
-  let invoiceTotal = 0
-  let netSpend = 0
-  let kbKeeps = 0
+  const commission = clientCardAd * rate          // earned on Client-Card ad spend
+  const invoiceTotal = feeLines + commission + kbCardAd
 
-  if (pattern === 'A') {
-    // Client paid the platforms directly → invoice only fee + commission on that spend.
-    commission = clientCardAd * rate
-    invoiceTotal = feeLines + commission
-  } else if (pattern === 'B') {
-    // KB fronted the spend → invoice everything; commission is hidden inside the gross.
-    invoiceTotal = feeLines + kbCardAd
-    netSpend = kbCardAd * (1 - rate)
-    kbKeeps = kbCardAd * rate
-  } else {
-    // No commission → fee lines only; ad spend excluded.
-    invoiceTotal = feeLines
-  }
+  const netSpend = kbCardAd * (1 - rate)          // what the freelancer is told to spend (KB Card)
+  const kbKeeps = kbCardAd * rate                 // commission hidden inside the KB-Card gross
 
   return { feeLines, clientCardAd, kbCardAd, monthlyTotal, commission, invoiceTotal, netSpend, kbKeeps }
 }
 
-// Best-guess default pattern for a client's services, used to pre-fill the dropdown.
-// KB-card ad spend → B; client-card ad with a rate → A; otherwise C.
-export function defaultPattern(
-  lines: { service_type: string; credit_card: string }[],
-  rate: number
-): Pattern {
-  const hasKbAd = lines.some(l => l.service_type === 'ad' && l.credit_card === 'KB Card')
-  if (hasKbAd) return 'B'
-  if (rate > 0) return 'A'
-  return 'C'
+// Descriptive label for the invoice record, derived from which cards are present.
+export function billingLabel(clientCardAd: number, kbCardAd: number): string {
+  if (clientCardAd > 0 && kbCardAd > 0) return 'mixed'
+  if (kbCardAd > 0) return 'kb-card'
+  if (clientCardAd > 0) return 'client-card'
+  return 'fee-only'
 }
