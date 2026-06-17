@@ -5,11 +5,7 @@ import { updateInvoiceStatus, createQuickbooksInvoice } from '@/app/invoices/act
 
 type Props = { id: string; status: string }
 
-const btnBase: React.CSSProperties = {
-  padding: '4px 10px', borderRadius: 5, border: 'none',
-  fontSize: 11, fontWeight: 600, cursor: 'pointer',
-  fontFamily: 'inherit', transition: 'all 0.15s',
-}
+const btnCls = "px-2.5 py-1 rounded-[5px] border-none text-[11px] font-semibold cursor-pointer font-sans transition-colors duration-150"
 
 export default function InvoiceRowActions({ id, status }: Props) {
   const [isPending, startTransition] = useTransition()
@@ -32,19 +28,17 @@ export default function InvoiceRowActions({ id, status }: Props) {
   }
 
   if (isPending) {
-    return <span style={{ fontSize: 11, color: '#9C9A92' }}>Updating…</span>
+    return <span className="text-[11px] text-kb-fg-3">Updating…</span>
   }
 
   if (error) {
-    return <span style={{ fontSize: 11, color: '#A32D2D' }}>{error}</span>
+    return <span className="text-[11px] text-kb-red">{error}</span>
   }
 
   if (status === 'draft') {
     return (
-      <button
-        onClick={() => change('review')}
-        style={{ ...btnBase, background: '#EEEDFE', color: '#3C3489' }}
-      >
+      <button onClick={() => change('review')}
+        className={`${btnCls} bg-kb-accent-light text-kb-accent-text`}>
         Send for Review
       </button>
     )
@@ -52,17 +46,13 @@ export default function InvoiceRowActions({ id, status }: Props) {
 
   if (status === 'review') {
     return (
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          onClick={() => change('approved')}
-          style={{ ...btnBase, background: '#E1F5EE', color: '#0F6E56' }}
-        >
+      <div className="flex gap-1.5">
+        <button onClick={() => change('approved')}
+          className={`${btnCls} bg-kb-green-light text-kb-green`}>
           Approve
         </button>
-        <button
-          onClick={() => change('rejected')}
-          style={{ ...btnBase, background: '#FCEBEB', color: '#A32D2D' }}
-        >
+        <button onClick={() => change('rejected')}
+          className={`${btnCls} bg-kb-red-light text-kb-red`}>
           Reject
         </button>
       </div>
@@ -71,10 +61,8 @@ export default function InvoiceRowActions({ id, status }: Props) {
 
   if (status === 'approved') {
     return (
-      <button
-        onClick={sendToQuickbooks}
-        style={{ ...btnBase, background: '#534AB7', color: '#FFFFFF' }}
-      >
+      <button onClick={sendToQuickbooks}
+        className={`${btnCls} bg-kb-accent text-white`}>
         Create Invoice in QuickBooks
       </button>
     )
@@ -82,18 +70,16 @@ export default function InvoiceRowActions({ id, status }: Props) {
 
   if (status === 'sent') {
     return (
-      <span style={{ fontSize: 11, color: '#185FA5', fontWeight: 500 }}>
-        ✓ Sent to QuickBooks
+      <span className="text-[11px] text-kb-blue font-medium">
+        &#10003; Sent to QuickBooks
       </span>
     )
   }
 
   if (status === 'rejected') {
     return (
-      <button
-        onClick={() => change('draft')}
-        style={{ ...btnBase, background: '#F5F4F1', color: '#6B6A65' }}
-      >
+      <button onClick={() => change('draft')}
+        className={`${btnCls} bg-kb-surface-alt text-kb-fg-2`}>
         Reset to Draft
       </button>
     )

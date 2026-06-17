@@ -3,13 +3,9 @@ import CreateInvoiceForm from '@/components/kbcbp/create-invoice-form'
 
 function AppBar() {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 4, padding: '12px 24px',
-      background: '#FFFFFF', borderBottom: '1px solid #E8E6E1',
-      position: 'sticky', top: 0, zIndex: 100,
-    }}>
-      <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: '-0.3px', marginRight: 12 }}>
-        KB<span style={{ color: '#534AB7' }}>CBP</span>
+    <div className="flex items-center gap-1 px-6 py-3 bg-kb-surface border-b border-kb-border sticky top-0 z-[100]">
+      <div className="font-semibold text-sm tracking-tight mr-3">
+        KB<span className="text-kb-accent">CBP</span>
       </div>
       {[
         { label: 'Budget Entry', href: '/', active: false },
@@ -17,51 +13,42 @@ function AppBar() {
         { label: 'Invoices', href: '/invoices', active: true },
         { label: 'Reports', href: '#', active: false },
       ].map(item => (
-        <Link key={item.label} href={item.href} style={{
-          padding: '5px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500,
-          background: item.active ? '#EEEDFE' : 'transparent',
-          color: item.active ? '#3C3489' : '#6B6A65',
-          textDecoration: 'none',
-        }}>
+        <Link key={item.label} href={item.href}
+          className={`px-3 py-1 rounded-md text-[13px] font-medium no-underline ${item.active ? 'bg-kb-accent-light text-kb-accent-text' : 'bg-transparent text-kb-fg-2'}`}>
           {item.label}
         </Link>
       ))}
-      <div style={{ flex: 1 }} />
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%', background: '#534AB7',
-        color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, fontWeight: 600,
-      }}>VM</div>
+      <div className="flex-1" />
+      <div className="w-7 h-7 rounded-full bg-kb-accent text-white flex items-center justify-center text-[11px] font-semibold">
+        VM
+      </div>
     </div>
   )
 }
 
 export default function NewInvoicePage() {
   return (
-    <div style={{ background: '#FAF9F7', minHeight: '100vh', fontFamily: "'DM Sans', -apple-system, sans-serif" }}>
+    <div className="min-h-screen bg-kb-bg font-sans">
       <AppBar />
 
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px 80px' }}>
+      <div className="max-w-[760px] mx-auto px-6 py-7 pb-20">
         {/* Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, fontSize: 12, color: '#9C9A92' }}>
-          <Link href="/invoices" style={{ color: '#534AB7', textDecoration: 'none', fontWeight: 500 }}>
+        <div className="flex items-center gap-1.5 mb-5 text-xs text-kb-fg-3">
+          <Link href="/invoices" className="text-kb-accent no-underline font-medium">
             Invoices
           </Link>
           <span>/</span>
           <span>New Invoice</span>
         </div>
 
-        <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.4px', color: '#1A1A18', marginBottom: 6 }}>
+        <h1 className="text-[22px] font-semibold tracking-tight text-kb-fg mb-1.5">
           Create Draft Invoice
         </h1>
-        <p style={{ fontSize: 13, color: '#6B6A65', marginBottom: 28 }}>
+        <p className="text-[13px] text-kb-fg-2 mb-7">
           Fill in the details below. The invoice will be saved as a draft — you can send it for review once ready.
         </p>
 
-        <div style={{
-          background: '#FFFFFF', borderRadius: 12, border: '1px solid #E8E6E1',
-          padding: '28px 28px 24px',
-        }}>
+        <div className="bg-kb-surface rounded-xl border border-kb-border px-7 py-7">
           <CreateInvoiceForm />
         </div>
       </div>

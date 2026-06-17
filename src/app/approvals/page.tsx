@@ -8,13 +8,9 @@ function fmt(n: number | null | undefined) {
 
 function AppBar() {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 4, padding: '12px 24px',
-      background: '#FFFFFF', borderBottom: '1px solid #E8E6E1',
-      position: 'sticky', top: 0, zIndex: 100,
-    }}>
-      <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: '-0.3px', marginRight: 12 }}>
-        KB<span style={{ color: '#534AB7' }}>CBP</span>
+    <div className="flex items-center gap-1 px-6 py-3 bg-kb-surface border-b border-kb-border sticky top-0 z-[100]">
+      <div className="font-semibold text-sm tracking-tight mr-3">
+        KB<span className="text-kb-accent">CBP</span>
       </div>
       {[
         { label: 'Budget Entry', href: '/', active: false },
@@ -22,23 +18,23 @@ function AppBar() {
         { label: 'Invoices', href: '/invoices', active: false },
         { label: 'Reports', href: '#', active: false },
       ].map(item => (
-        <Link key={item.label} href={item.href} style={{
-          padding: '5px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500,
-          background: item.active ? '#EEEDFE' : 'transparent',
-          color: item.active ? '#3C3489' : '#6B6A65',
-          textDecoration: 'none',
-        }}>
+        <Link key={item.label} href={item.href}
+          className={`px-3 py-1 rounded-md text-[13px] font-medium no-underline ${item.active ? 'bg-kb-accent-light text-kb-accent-text' : 'bg-transparent text-kb-fg-2'}`}>
           {item.label}
         </Link>
       ))}
-      <div style={{ flex: 1 }} />
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%', background: '#534AB7',
-        color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, fontWeight: 600,
-      }}>VM</div>
+      <div className="flex-1" />
+      <div className="w-7 h-7 rounded-full bg-kb-accent text-white flex items-center justify-center text-[11px] font-semibold">
+        VM
+      </div>
     </div>
   )
+}
+
+const STATUS_CLS: Record<string, { label: string; cls: string; dotCls: string }> = {
+  approved: { label: 'Approved',  cls: 'bg-kb-green-light text-kb-green', dotCls: 'bg-kb-green-dot' },
+  sent:     { label: 'Sent to QB', cls: 'bg-kb-blue-light text-kb-blue', dotCls: 'bg-kb-blue' },
+  paid:     { label: 'Paid',      cls: 'bg-kb-green-light text-kb-green', dotCls: 'bg-kb-green-dot' },
 }
 
 export default async function ApprovalsPage() {
@@ -55,65 +51,45 @@ export default async function ApprovalsPage() {
 
   const cols = ['Invoice #', 'Client', 'Month', 'PM', 'Fee', 'Ad Spend', 'Commission', 'Total', 'Status', 'Approved On']
 
-  const STATUS_STYLES: Record<string, { label: string; bg: string; color: string; dot: string }> = {
-    approved: { label: 'Approved',  bg: '#E1F5EE', color: '#0F6E56', dot: '#1D9E75' },
-    sent:     { label: 'Sent to QB', bg: '#E6F1FB', color: '#185FA5', dot: '#185FA5' },
-    paid:     { label: 'Paid',      bg: '#E1F5EE', color: '#0F6E56', dot: '#1D9E75' },
-  }
-
   return (
-    <div style={{ background: '#FAF9F7', minHeight: '100vh', fontFamily: "'DM Sans', -apple-system, sans-serif" }}>
+    <div className="min-h-screen bg-kb-bg font-sans">
       <AppBar />
 
       {/* Status bar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 16, padding: '8px 24px',
-        background: '#F5F4F1', borderBottom: '1px solid #E8E6E1',
-        fontSize: 12, color: '#6B6A65',
-      }}>
-        <span>
-          <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#1D9E75', marginRight: 5 }} />
+      <div className="flex items-center gap-4 px-6 py-2 bg-kb-surface-alt border-b border-kb-border text-xs text-kb-fg-2">
+        <span className="flex items-center gap-[5px]">
+          <span className="w-[7px] h-[7px] rounded-full inline-block bg-kb-green-dot" />
           {approvedCount} approved
         </span>
-        <span style={{ width: 1, height: 16, background: '#E8E6E1', display: 'inline-block' }} />
-        <span>
-          <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#185FA5', marginRight: 5 }} />
+        <span className="w-px h-4 inline-block bg-kb-border" />
+        <span className="flex items-center gap-[5px]">
+          <span className="w-[7px] h-[7px] rounded-full inline-block bg-kb-blue" />
           {sentCount} sent to QuickBooks
         </span>
-        <span style={{ width: 1, height: 16, background: '#E8E6E1', display: 'inline-block' }} />
-        <span>
-          <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#534AB7', marginRight: 5 }} />
+        <span className="w-px h-4 inline-block bg-kb-border" />
+        <span className="flex items-center gap-[5px]">
+          <span className="w-[7px] h-[7px] rounded-full inline-block bg-kb-accent" />
           {all.length} total
         </span>
       </div>
 
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px 24px 80px' }}>
+      <div className="max-w-[1400px] mx-auto px-6 py-5 pb-20">
         {all.length === 0 ? (
-          <div style={{
-            background: '#FFFFFF', borderRadius: 12, border: '1px solid #E8E6E1',
-            padding: '60px 24px', textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1A1A18', marginBottom: 6 }}>No approved invoices yet</div>
-            <div style={{ fontSize: 13, color: '#9C9A92' }}>
+          <div className="bg-kb-surface rounded-xl border border-kb-border py-15 px-6 text-center">
+            <div className="text-4xl mb-3">&#9989;</div>
+            <div className="text-[15px] font-semibold text-kb-fg mb-1.5">No approved invoices yet</div>
+            <div className="text-[13px] text-kb-fg-3">
               Invoices will appear here once they have been approved.
             </div>
           </div>
         ) : (
-          <div style={{ background: '#FFFFFF', borderRadius: 12, border: '1px solid #E8E6E1', overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div className="bg-kb-surface rounded-xl border border-kb-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
                 <thead>
                   <tr>
                     {cols.map((h, i) => (
-                      <th key={i} style={{
-                        padding: '10px 14px',
-                        textAlign: i >= 4 && i <= 7 ? 'right' : 'left',
-                        fontWeight: 500, fontSize: 11,
-                        textTransform: 'uppercase' as const, letterSpacing: '0.4px',
-                        color: '#9C9A92', borderBottom: '1px solid #E8E6E1',
-                        background: '#FFFFFF', whiteSpace: 'nowrap',
-                      }}>
+                      <th key={i} className={`px-3.5 py-2.5 font-medium text-[11px] uppercase tracking-wider text-kb-fg-3 border-b border-kb-border bg-kb-surface whitespace-nowrap ${i >= 4 && i <= 7 ? 'text-right' : 'text-left'}`}>
                         {h}
                       </th>
                     ))}
@@ -121,69 +97,43 @@ export default async function ApprovalsPage() {
                 </thead>
                 <tbody>
                   {all.map((inv, idx) => {
-                    const st = STATUS_STYLES[inv.status] ?? STATUS_STYLES.approved
+                    const st = STATUS_CLS[inv.status] ?? STATUS_CLS.approved
                     const date = inv.updated_at
                       ? new Date(inv.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : '—'
                     return (
-                      <tr key={inv.id} style={{
-                        borderBottom: idx < all.length - 1 ? '1px solid #E8E6E1' : 'none',
-                      }}>
-                        <td style={{
-                          padding: '10px 14px',
-                          fontFamily: "'DM Mono', monospace", fontWeight: 500,
-                          color: '#3C3489', whiteSpace: 'nowrap',
-                        }}>
+                      <tr key={inv.id} className={idx < all.length - 1 ? 'border-b border-kb-border' : ''}>
+                        <td className="px-3.5 py-2.5 font-mono font-medium text-kb-accent-text whitespace-nowrap">
                           {inv.invoice_number ?? '—'}
                         </td>
-                        <td style={{ padding: '10px 14px', fontWeight: 500, color: '#1A1A18', minWidth: 160 }}>
+                        <td className="px-3.5 py-2.5 font-medium text-kb-fg min-w-[160px]">
                           {inv.client_name}
                         </td>
-                        <td style={{ padding: '10px 14px', color: '#6B6A65', whiteSpace: 'nowrap' }}>
+                        <td className="px-3.5 py-2.5 text-kb-fg-2 whitespace-nowrap">
                           {inv.billing_month}
                         </td>
-                        <td style={{ padding: '10px 14px', color: '#6B6A65' }}>
+                        <td className="px-3.5 py-2.5 text-kb-fg-2">
                           {inv.pm_name}
                         </td>
-                        <td style={{
-                          padding: '10px 14px', textAlign: 'right',
-                          fontFamily: "'DM Mono', monospace", color: '#6B6A65', whiteSpace: 'nowrap',
-                        }}>
+                        <td className="px-3.5 py-2.5 text-right font-mono text-kb-fg-2 whitespace-nowrap">
                           {fmt(inv.fee_amount)}
                         </td>
-                        <td style={{
-                          padding: '10px 14px', textAlign: 'right',
-                          fontFamily: "'DM Mono', monospace", color: '#6B6A65', whiteSpace: 'nowrap',
-                        }}>
+                        <td className="px-3.5 py-2.5 text-right font-mono text-kb-fg-2 whitespace-nowrap">
                           {fmt(inv.ad_spend_amount)}
                         </td>
-                        <td style={{
-                          padding: '10px 14px', textAlign: 'right',
-                          fontFamily: "'DM Mono', monospace", color: '#0F6E56', whiteSpace: 'nowrap',
-                        }}>
+                        <td className="px-3.5 py-2.5 text-right font-mono text-kb-green whitespace-nowrap">
                           {fmt(inv.commission_amount)}
                         </td>
-                        <td style={{
-                          padding: '10px 14px', textAlign: 'right',
-                          fontFamily: "'DM Mono', monospace", fontWeight: 600,
-                          color: '#1A1A18', whiteSpace: 'nowrap',
-                        }}>
+                        <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-kb-fg whitespace-nowrap">
                           {fmt(inv.invoice_total)}
                         </td>
-                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            padding: '3px 8px', borderRadius: 4,
-                            background: st.bg, color: st.color,
-                            fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-                          }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot }} />
+                        <td className="px-3.5 py-2.5 whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-[5px] px-2 py-[3px] rounded text-[11px] font-semibold whitespace-nowrap ${st.cls}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${st.dotCls}`} />
                             {st.label}
                           </span>
                         </td>
-                        <td style={{
-                          padding: '10px 14px', fontSize: 12, color: '#9C9A92', whiteSpace: 'nowrap',
-                        }}>
+                        <td className="px-3.5 py-2.5 text-xs text-kb-fg-3 whitespace-nowrap">
                           {date}
                         </td>
                       </tr>

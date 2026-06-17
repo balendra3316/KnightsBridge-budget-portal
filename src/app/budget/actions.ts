@@ -102,7 +102,6 @@ export async function createDraftFromBudget(
 export async function addService(
   clientId: string,
   serviceName: string,
-  serviceType: 'fee' | 'ad' | 'seo',
   creditCard: string
 ): Promise<{ error?: string }> {
   const supabase = await createClient()
@@ -116,6 +115,10 @@ export async function addService(
     .single()
 
   const nextSort = (maxSort?.sort_order ?? 0) + 1
+
+  // The card decides whether this is ad spend. service_type is kept only for the
+  // row's colour dot / legacy reads — the invoice math is purely card-driven now.
+  const serviceType = creditCard ? 'ad' : 'fee'
 
   const { error } = await supabase.from('client_services').insert({
     client_id: clientId,

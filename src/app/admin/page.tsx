@@ -24,60 +24,40 @@ export default async function AdminDashboard() {
     .limit(20)
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#FAF9F7',
-      fontFamily: "'DM Sans', -apple-system, sans-serif",
-    }}>
+    <div className="min-h-screen bg-kb-bg font-sans">
       {/* Admin header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 4, padding: '12px 24px',
-        background: '#FFFFFF', borderBottom: '1px solid #E8E6E1',
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: '-0.3px', marginRight: 8 }}>
-          KB<span style={{ color: '#534AB7' }}>CBP</span>
+      <div className="flex items-center gap-1 px-6 py-3 bg-kb-surface border-b border-kb-border sticky top-0 z-[100]">
+        <div className="font-semibold text-sm tracking-tight mr-2">
+          KB<span className="text-kb-accent">CBP</span>
         </div>
-        <span style={{
-          fontSize: 10, fontWeight: 600, letterSpacing: '0.3px',
-          color: '#FFFFFF', background: '#534AB7', borderRadius: 4,
-          padding: '2px 6px',
-        }}>ADMIN</span>
-        <Link href="/" style={{
-          padding: '5px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500,
-          color: '#6B6A65', textDecoration: 'none', marginLeft: 12,
-        }}>
+        <span className="text-[10px] font-semibold tracking-wide text-white bg-kb-accent rounded px-1.5 py-0.5">
+          ADMIN
+        </span>
+        <Link href="/" className="px-3 py-1 rounded-md text-[13px] font-medium text-kb-fg-2 no-underline ml-3">
           Budget Entry
         </Link>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: '#6B6A65', marginRight: 12 }}>
+        <div className="flex-1" />
+        <span className="text-xs text-kb-fg-2 mr-3">
           {admin.name}
         </span>
         <LogoutButton />
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 24px 80px' }}>
+      <div className="max-w-[1100px] mx-auto px-6 py-6 pb-20">
         {/* Pending approvals */}
-        <div style={{ marginBottom: 32 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
-          }}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px', margin: 0 }}>
+        <div className="mb-8">
+          <div className="flex items-center gap-2.5 mb-3">
+            <h2 className="text-[17px] font-semibold tracking-tight m-0">
               Pending Approval
             </h2>
-            <span style={{
-              padding: '3px 10px', borderRadius: 10, fontSize: 12, fontWeight: 700,
-              background: '#FAEEDA', color: '#854F0B',
-            }}>
+            <span className="px-2.5 py-[3px] rounded-[10px] text-xs font-bold bg-kb-amber-light text-kb-amber">
               {pendingInvoices?.length ?? 0}
             </span>
           </div>
 
           {!pendingInvoices || pendingInvoices.length === 0 ? (
-            <div style={{
-              padding: '40px 20px', textAlign: 'center', background: '#FFFFFF',
-              borderRadius: 12, border: '1px solid #E8E6E1',
-            }}>
-              <div style={{ fontSize: 13, color: '#9C9A92' }}>No invoices pending approval</div>
+            <div className="py-10 px-5 text-center bg-kb-surface rounded-xl border border-kb-border">
+              <div className="text-[13px] text-kb-fg-3">No invoices pending approval</div>
             </div>
           ) : (
             <AdminInvoiceTable invoices={pendingInvoices} showActions />
@@ -86,15 +66,12 @@ export default async function AdminDashboard() {
 
         {/* Recent activity */}
         <div>
-          <h2 style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px', marginBottom: 12 }}>
+          <h2 className="text-[17px] font-semibold tracking-tight mb-3">
             Recent Activity
           </h2>
           {!recentInvoices || recentInvoices.length === 0 ? (
-            <div style={{
-              padding: '40px 20px', textAlign: 'center', background: '#FFFFFF',
-              borderRadius: 12, border: '1px solid #E8E6E1',
-            }}>
-              <div style={{ fontSize: 13, color: '#9C9A92' }}>No recent activity</div>
+            <div className="py-10 px-5 text-center bg-kb-surface rounded-xl border border-kb-border">
+              <div className="text-[13px] text-kb-fg-3">No recent activity</div>
             </div>
           ) : (
             <AdminInvoiceTable invoices={recentInvoices} />

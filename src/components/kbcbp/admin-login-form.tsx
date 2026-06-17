@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react'
 import { adminLogin } from '@/app/admin/actions'
 
+const inputCls = "w-full px-3.5 py-2.5 rounded-lg border border-kb-border-strong text-sm font-sans outline-none bg-kb-bg"
+
 export default function AdminLoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,16 +20,10 @@ export default function AdminLoginForm() {
     })
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', borderRadius: 8,
-    border: '1px solid #D3D1C7', fontSize: 14, fontFamily: 'inherit',
-    outline: 'none', background: '#FAF9F7', boxSizing: 'border-box',
-  }
-
   return (
     <form onSubmit={handleSubmit}>
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6B6A65', marginBottom: 6 }}>
+      <div className="mb-4">
+        <label className="block text-xs font-semibold text-kb-fg-2 mb-1.5">
           Email
         </label>
         <input
@@ -36,11 +32,11 @@ export default function AdminLoginForm() {
           onChange={e => setEmail(e.target.value)}
           placeholder="admin@knightbridge.com"
           required
-          style={inputStyle}
+          className={inputCls}
         />
       </div>
-      <div style={{ marginBottom: 24 }}>
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6B6A65', marginBottom: 6 }}>
+      <div className="mb-6">
+        <label className="block text-xs font-semibold text-kb-fg-2 mb-1.5">
           Password
         </label>
         <input
@@ -49,35 +45,25 @@ export default function AdminLoginForm() {
           onChange={e => setPassword(e.target.value)}
           placeholder="Enter password"
           required
-          style={inputStyle}
+          className={inputCls}
         />
       </div>
 
       {error && (
-        <div style={{
-          padding: '8px 12px', borderRadius: 6, marginBottom: 16,
-          background: '#FCEBEB', color: '#A32D2D', fontSize: 12, fontWeight: 500,
-        }}>{error}</div>
+        <div className="px-3 py-2 rounded-md mb-4 bg-kb-red-light text-kb-red text-xs font-medium">
+          {error}
+        </div>
       )}
 
       <button
         type="submit"
         disabled={isPending}
-        style={{
-          width: '100%', padding: '10px 0', borderRadius: 8, border: 'none',
-          background: '#534AB7', color: 'white', fontSize: 14,
-          fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-          opacity: isPending ? 0.7 : 1,
-        }}
+        className="w-full py-2.5 rounded-lg border-none bg-kb-accent text-white text-sm font-semibold font-sans cursor-pointer disabled:opacity-70"
       >
         {isPending ? 'Signing in...' : 'Sign In'}
       </button>
 
-      <div style={{
-        marginTop: 20, padding: '10px 12px', borderRadius: 6,
-        background: '#F5F4F1', border: '1px solid #E8E6E1',
-        fontSize: 11, color: '#9C9A92', textAlign: 'center',
-      }}>
+      <div className="mt-5 px-3 py-2.5 rounded-md bg-kb-surface-alt border border-kb-border text-[11px] text-kb-fg-3 text-center">
         Demo: admin@knightbridge.com / admin123
       </div>
     </form>

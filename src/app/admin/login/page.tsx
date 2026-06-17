@@ -7,26 +7,16 @@ export default async function AdminLoginPage() {
   if (admin) redirect('/admin')
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#FAF9F7',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: "'DM Sans', -apple-system, sans-serif",
-    }}>
-      <div style={{
-        width: 380, background: '#FFFFFF', borderRadius: 16,
-        border: '1px solid #E8E6E1', padding: '40px 32px',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontWeight: 600, fontSize: 18, letterSpacing: '-0.3px', marginBottom: 4 }}>
-            KB<span style={{ color: '#534AB7' }}>CBP</span>
-            <span style={{
-              fontSize: 10, fontWeight: 600, letterSpacing: '0.3px',
-              color: '#FFFFFF', background: '#534AB7', borderRadius: 4,
-              padding: '2px 6px', marginLeft: 8, verticalAlign: 'middle',
-            }}>ADMIN</span>
+    <div className="min-h-screen bg-kb-bg flex items-center justify-center font-sans">
+      <div className="w-[380px] bg-kb-surface rounded-2xl border border-kb-border px-8 py-10 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">
+        <div className="text-center mb-7">
+          <div className="font-semibold text-lg tracking-tight mb-1">
+            KB<span className="text-kb-accent">CBP</span>
+            <span className="text-[10px] font-semibold tracking-wide text-white bg-kb-accent rounded px-1.5 py-0.5 ml-2 align-middle">
+              ADMIN
+            </span>
           </div>
-          <div style={{ fontSize: 13, color: '#9C9A92' }}>Sign in to manage invoices</div>
+          <div className="text-[13px] text-kb-fg-3">Sign in to manage invoices</div>
         </div>
         <AdminLoginForm />
       </div>

@@ -14,18 +14,19 @@ const sum = (lines: BudgetLine[]) =>
 // The single source of truth for invoice math. Pure function — runs identically
 // in the budget grid (live preview) and the server action (authoritative save).
 //
-// The card on each service decides how its spend is billed:
-//   • Client Card ad → client paid the platform directly → invoice only the commission on it.
-//   • KB Card ad     → KB fronted the spend → invoice it in full (commission baked in).
-//   • Fee / SEO      → always invoiced.
+// The CARD on each service decides how its spend is billed (service_type no longer
+// matters — a line is "ad spend" precisely when a card is attached to it):
+//   • Client Card → client paid the platform directly → invoice only the commission on it.
+//   • KB Card     → KB fronted the spend → invoice it in full (commission baked in).
+//   • No card     → fee / retainer / SEO etc. → always invoiced in full.
 // This handles pure Client-Card, pure KB-Card, and mixed-card clients automatically.
 export function computeInvoice(lines: BudgetLine[], rate: number): InvoiceCalc {
   // Skip every sub-line. Only top-level (parent) rows count.
   const lineItems = lines.filter(l => !l.parent_service_id)
 
-  const feeLines = sum(lineItems.filter(l => l.service_type !== 'ad'))
-  const clientCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'Client Card'))
-  const kbCardAd = sum(lineItems.filter(l => l.service_type === 'ad' && l.credit_card === 'KB Card'))
+  const clientCardAd = sum(lineItems.filter(l => l.credit_card === 'Client Card'))
+  const kbCardAd = sum(lineItems.filter(l => l.credit_card === 'KB Card'))
+  const feeLines = sum(lineItems.filter(l => l.credit_card !== 'Client Card' && l.credit_card !== 'KB Card'))
   const monthlyTotal = sum(lineItems)
 
   const commission = clientCardAd * rate          // earned on Client-Card ad spend
