@@ -225,49 +225,43 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     <div className="rounded-xl mb-4 overflow-hidden bg-kb-surface border border-kb-border">
 
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-5 py-3 flex-wrap border-b border-kb-border bg-kb-surface-alt">
-        <div className="text-[15px] font-semibold tracking-tight">{client.name}</div>
+      <div className="flex items-center gap-2.5 px-5 py-3 flex-nowrap overflow-hidden border-b border-kb-border bg-kb-surface-alt">
+        <div className="text-[15px] font-semibold tracking-tight whitespace-nowrap shrink-0">{client.name}</div>
         {client.project_name && (
-          <div className="text-[13px] font-medium text-kb-fg-2">
+          <div className="text-[13px] font-medium text-kb-fg-2 min-w-0 truncate">
             <span className="text-kb-fg-3">/ </span>{client.project_name}
           </div>
         )}
         {client.region && (
-          <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-kb-blue-light text-kb-blue">
+          <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-kb-blue-light text-kb-blue whitespace-nowrap shrink-0">
             {client.region}
           </span>
         )}
         {client.tags?.map(tag => (
-          <span key={tag} className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-kb-coral-light text-kb-coral">
+          <span key={tag} className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-kb-coral-light text-kb-coral whitespace-nowrap shrink-0">
             {tag}
           </span>
         ))}
+        {client.notes?.map((note, i) => (
+          <span key={`note-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-kb-surface text-kb-fg-2 border border-kb-border whitespace-nowrap shrink-0">
+            {note}
+          </span>
+        ))}
         <div className="flex-1" />
-        <div className="text-xs text-kb-fg-3">
+        <div className="text-xs text-kb-fg-3 whitespace-nowrap shrink-0">
           Team: <strong className="font-medium text-kb-fg-2">{client.team}</strong>
         </div>
       </div>
-
-      {/* Notes */}
-      {client.notes && client.notes.length > 0 && (
-        <div className="px-5 py-2 flex gap-3 items-center flex-wrap border-b border-kb-border">
-          {client.notes.map((note, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-kb-surface-alt text-kb-fg-2 border border-kb-border">
-              {note}
-            </span>
-          ))}
-        </div>
-      )}
 
       {/* Grid */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-[11px] uppercase tracking-wider min-w-[240px] sticky left-0 z-[2] text-kb-fg-3 border-b border-kb-border bg-kb-surface">
+              <th className="px-3 py-2 text-left font-medium text-[11px] uppercase tracking-wider w-[320px] min-w-[320px] max-w-[320px] sticky left-0 z-[2] text-kb-fg-3 border-b border-kb-border bg-kb-surface">
                 Service
               </th>
-              <th className="px-3 py-2 text-center font-medium text-[11px] uppercase tracking-wider min-w-[85px] sticky left-[240px] z-[2] text-kb-fg-3 border-b border-kb-border bg-kb-surface">
+              <th className="px-3 py-2 text-center font-medium text-[11px] uppercase tracking-wider w-[120px] min-w-[120px] sticky left-[320px] z-[2] text-kb-fg-3 border-b border-kb-border bg-kb-surface">
                 CC
               </th>
               {months.map(m => {
@@ -292,13 +286,13 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               return (
                 <tr key={svc.id}>
                   <td className={`px-3 py-1.5 sticky left-0 z-[1] border-b border-kb-border bg-kb-surface ${isSub ? 'text-kb-fg-3' : 'text-kb-fg'}`}>
-                    <div className={`flex items-center gap-2 ${isSub ? 'pl-5' : ''}`}>
+                    <div className={`flex items-center gap-2 min-w-0 ${isSub ? 'pl-5' : ''}`}>
                       {isSub ? (
                         <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-kb-fg-3" />
                       ) : (
                         <span className={`w-1.5 h-1.5 rounded-sm shrink-0 ${SVC_DOT[svc.service_type] ?? 'bg-kb-fg-3'}`} />
                       )}
-                      <span className="flex-1">{svc.service_name}</span>
+                      <span className="flex-1 min-w-0 truncate whitespace-nowrap" title={svc.service_name}>{svc.service_name}</span>
                       {isSub && (
                         <span className="text-[9px] font-semibold tracking-wide uppercase rounded px-1 py-px text-kb-muted border border-kb-border">
                           sub
@@ -314,7 +308,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                       </button>
                     </div>
                   </td>
-                  <td className="px-3 py-1.5 text-center sticky left-[240px] z-[1] border-b border-kb-border bg-kb-surface">
+                  <td className="px-3 py-1.5 text-center sticky left-[320px] z-[1] border-b border-kb-border bg-kb-surface">
                     {CC_MAP[svc.credit_card] ? (
                       <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${CC_MAP[svc.credit_card]!.cls}`}>
                         {CC_MAP[svc.credit_card]!.label}
@@ -359,7 +353,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               <td className="px-3 py-1.5 font-medium text-[12px] sticky left-0 z-[1] text-kb-green border-t-2 border-t-kb-border-strong bg-kb-surface">
                 Commission
               </td>
-              <td className="sticky left-[240px] z-[1] border-t-2 border-t-kb-border-strong bg-kb-surface" />
+              <td className="sticky left-[320px] z-[1] border-t-2 border-t-kb-border-strong bg-kb-surface" />
               {months.map(m => {
                 const inv = invoices.find(i => i.billing_month === m) ?? null
                 const isActive = m === activeMonth
@@ -379,7 +373,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               <td className="px-3 py-2 font-semibold text-[13px] sticky left-0 z-[1] text-kb-fg bg-kb-surface">
                 Monthly total
               </td>
-              <td className="sticky left-[240px] z-[1] bg-kb-surface" />
+              <td className="sticky left-[320px] z-[1] bg-kb-surface" />
               {months.map(m => {
                 const isActive = m === activeMonth
                 const inv = invoices.find(i => i.billing_month === m) ?? null
@@ -399,7 +393,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               <td className="px-3 py-2 font-semibold text-[13px] sticky left-0 z-[1] text-kb-accent-text bg-kb-surface">
                 Invoice total
               </td>
-              <td className="sticky left-[240px] z-[1] bg-kb-surface" />
+              <td className="sticky left-[320px] z-[1] bg-kb-surface" />
               {months.map(m => {
                 const inv = invoices.find(i => i.billing_month === m) ?? null
                 const isActive = m === activeMonth
@@ -419,7 +413,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               <td className="px-3 py-1 pb-2 font-medium uppercase tracking-wide text-[10px] sticky left-0 z-[1] text-kb-fg-3 bg-kb-surface">
                 Invoice
               </td>
-              <td className="sticky left-[240px] z-[1] bg-kb-surface" />
+              <td className="sticky left-[320px] z-[1] bg-kb-surface" />
               {months.map(m => {
                 const inv = invoices.find(i => i.billing_month === m) ?? null
                 const isActive = m === activeMonth
@@ -545,7 +539,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               <span className="font-semibold font-mono text-[11px] text-kb-fg">{fmt(calc.kbCardAd)}</span>
             </div>
           )}
-          {calc.clientCardAd > 0 && rate > 0 && (
+          {(calc.clientCardAd > 0 || calc.kbCardAd > 0) && rate > 0 && (
             <div>
               <span className="text-kb-fg-3">Commission </span>
               <span className="font-semibold font-mono text-[11px] text-kb-green">{fmt(calc.commission)}</span>

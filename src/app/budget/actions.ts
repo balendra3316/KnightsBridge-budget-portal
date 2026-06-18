@@ -74,8 +74,16 @@ export async function createDraftFromBudget(
   })
 
   const calc = computeInvoice(lines, rate)
-  // Freeze the printable rows now (client-card spend excluded, KB shown in full).
+  // Freeze the printable rows now (client-card spend excluded; kb-card spend shown
+  // in full; commission on both collected into the single Commission row).
   const lineItems = buildLineItems(lines, rate)
+
+  // Persist the chosen rate so the client's stored commission_rate stays in sync
+  // with what the creator picked in the dropdown (otherwise the grid would revert
+  // to the old DB value on the next load, and future drafts would use it).
+  if ((Number(client.commission_rate) || 0) !== rate * 100) {
+    await supabase.from('clients').update({ commission_rate: rate * 100 }).eq('id', clientId)
+  }
 
   // Generate invoice number
   const { count } = await supabase

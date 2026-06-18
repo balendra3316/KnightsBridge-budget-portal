@@ -55,29 +55,45 @@ export default async function InvoicePreviewPage({
 
   if (!invoice) notFound()
 
-  type LineItem = { name: string; amount: number }
+  type LineItem = { name: string; amount: number; card?: string }
   let lineItems: LineItem[] = []
 
-  // Render purely from the invoice snapshot — never recompute from live budget
-  // entries (which could drift from the locked totals).
+  // Each stored row now carries its `card` ('' / 'Client Card' / 'KB Card'), so we
+  // can hide card-paid rows on the printed invoice (manager's UI preference) straight
+  // from the snapshot. For older invoices saved before `card` existed, we fall back
+  // to looking the card up from client_services. Amounts always stay frozen — the
+  // card flag only decides which rows to *show*, so totals never drift.
+  const { data: svcRows } = await supabase
+    .from('client_services')
+    .select('service_name, credit_card')
+    .eq('client_id', invoice.client_id)
+
+  const cardByName = new Map<string, string>()
+  for (const s of svcRows ?? []) cardByName.set(s.service_name, s.credit_card ?? '')
+  const isCardRow = (li: LineItem) => {
+    const card = li.card ?? cardByName.get(li.name) ?? ''
+    return card === 'KB Card' || card === 'Client Card'
+  }
+
+  // Render purely from the invoice snapshot — never recompute amounts from live
+  // budget entries (which could drift from the locked totals).
   if (Array.isArray(invoice.line_items) && invoice.line_items.length > 0) {
-    // Rows frozen when the draft was created (card rules already applied:
-    // client-card spend excluded, KB-card spend shown in full).
-    lineItems = (invoice.line_items as LineItem[]).map(li => ({
-      name: String(li.name),
-      amount: Number(li.amount) || 0,
-    }))
+    // Frozen rows, minus any KB-/Client-Card service rows (kept hidden). The
+    // Commission row and fee rows remain. KB-card spend still counts in the total.
+    lineItems = (invoice.line_items as LineItem[])
+      .filter(li => !isCardRow(li))
+      .map(li => ({
+        name: String(li.name),
+        amount: Number(li.amount) || 0,
+      }))
   } else {
     // Fallback for invoices created before line_items existed: rebuild from the
-    // saved aggregate fields. Client-Card spend is represented ONLY by its
-    // commission; the billed ad spend is whatever the total isn't fee/commission
-    // (i.e. the KB-Card portion). Client-card spend never appears as a line.
+    // saved aggregate fields. Neither client-card nor kb-card ad spend is itemized
+    // on the printed invoice (manager's UI preference) — only the fees and the
+    // combined commission are shown. The kb-card spend still lives in the total.
     const fee = Number(invoice.fee_amount) || 0
     const commission = Number(invoice.commission_amount) || 0
-    const total = Number(invoice.invoice_total) || 0
-    const kbAdSpend = Math.max(0, total - fee - commission)
     if (fee > 0) lineItems.push({ name: 'Management & Service Fees', amount: fee })
-    if (kbAdSpend > 0) lineItems.push({ name: 'Digital Advertising Budget', amount: kbAdSpend })
     if (commission > 0) {
       lineItems.push({ name: `Commission (${fmtRate(invoice.commission_rate)}%)`, amount: commission })
     }

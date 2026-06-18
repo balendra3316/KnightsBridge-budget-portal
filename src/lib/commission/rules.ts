@@ -16,9 +16,11 @@ const sum = (lines: BudgetLine[]) =>
 //
 // The CARD on each parent service decides how its spend is billed (service_type
 // no longer matters — a line is "ad spend" precisely when a card is attached):
-//   • Client Card → client paid the platform directly → invoice only the commission on it.
-//   • KB Card     → KB fronted the spend → invoice it in full (commission baked in).
-//   • No card     → fee / retainer / SEO etc. → always invoiced in full.
+//   • Client Card → client paid the platform directly → invoice ONLY the commission
+//                   on it (the spend itself is not billed).
+//   • KB Card     → KB fronted the spend on its card → invoice the spend in FULL
+//                   (reimbursement) AND charge commission on it.
+//   • No card     → fee / retainer / SEO etc. → invoiced in full, no commission.
 //
 // Sub-lines roll UP: a parent that has sub-lines is billed on the SUM of its
 // children (not on its own entered amount). So editing a sub-service changes its
@@ -40,28 +42,34 @@ export function computeInvoice(lines: BudgetLine[], rate: number): InvoiceCalc {
   const feeLines = sumWhere(l => l.credit_card !== 'Client Card' && l.credit_card !== 'KB Card')
   const monthlyTotal = clientCardAd + kbCardAd + feeLines
 
-  const commission = clientCardAd * rate          // earned on Client-Card ad spend
-  const invoiceTotal = feeLines + commission + kbCardAd
+  // Commission is earned on ALL card-paid ad spend — the client's card AND KB's card.
+  // Client-card spend is not billed (only its commission). KB-card spend IS billed in
+  // full (KB fronted it) and ALSO earns commission. No-card fees are billed in full.
+  const commission = (clientCardAd + kbCardAd) * rate
+  const invoiceTotal = feeLines + kbCardAd + commission
 
-  const netSpend = kbCardAd * (1 - rate)          // what the freelancer is told to spend (KB Card)
-  const kbKeeps = kbCardAd * rate                 // commission hidden inside the KB-Card gross
+  const netSpend = kbCardAd * (1 - rate)          // KB Card: what the freelancer is told to spend
+  const kbKeeps = kbCardAd * rate                 // KB Card: its share of the commission above
 
   return { feeLines, clientCardAd, kbCardAd, monthlyTotal, commission, invoiceTotal, netSpend, kbKeeps }
 }
 
 // One printable row on the invoice. Stored (frozen) on the invoice at creation.
-export type InvoiceLineItem = { name: string; amount: number }
+// `card` records how the row was paid ('' = fee/no-card, 'Client Card', 'KB Card')
+// so the invoice page can decide which rows to show or hide.
+export type InvoiceLineItem = { name: string; amount: number; card?: string }
 
 // Input for buildLineItems — a BudgetLine plus the service's display name.
 export type NamedBudgetLine = BudgetLine & { service_name: string }
 
-// Build the printable invoice rows from the budget lines, applying the same card
-// rules as computeInvoice so the rows always reconcile to invoiceTotal:
-//   • No card (fee) → its own row, billed in full (e.g. "Digital Marketing Suite").
-//   • KB Card       → its own row, billed in full (commission baked into the gross).
-//   • Client Card   → NOT listed; only feeds the single Commission row at the end.
-// Then one combined "Commission" row, then the total. Parents roll up their
-// sub-services; sub-lines are never printed on their own.
+// Build the invoice rows from the budget lines. EVERY service is stored as a row
+// tagged with its credit card, so the invoice page can decide which rows to show or
+// hide. Then one combined "Commission" row:
+//   • No card (fee)         → card '' — shown on the invoice, billed in full.
+//   • Client Card / KB Card → tagged with the card; the invoice page hides these rows
+//                             by default. Each also feeds the single Commission row.
+//                             (KB-card spend still counts toward invoiceTotal.)
+// Parents roll up their sub-services; sub-lines are never stored on their own.
 export function buildLineItems(lines: NamedBudgetLine[], rate: number): InvoiceLineItem[] {
   const parents = lines.filter(l => !l.parent_service_id)
   const effective = (parent: NamedBudgetLine): number => {
@@ -74,16 +82,18 @@ export function buildLineItems(lines: NamedBudgetLine[], rate: number): InvoiceL
   for (const p of parents) {
     const amt = effective(p)
     if (amt <= 0) continue
-    if (p.credit_card === 'Client Card') {
-      // Client paid the platforms directly — the service isn't billed, it only
-      // contributes commission (collected into one row below).
+    if (p.credit_card === 'Client Card' || p.credit_card === 'KB Card') {
+      // Store the row tagged with its card so the invoice page can hide it. The card
+      // spend also feeds the single Commission row below. (KB-card spend still counts
+      // toward invoiceTotal in computeInvoice — hiding the row changes no total.)
+      items.push({ name: p.service_name, amount: amt, card: p.credit_card })
       commission += amt * rate
     } else {
-      // No card (fee) or KB Card → billed in full as its own row.
-      items.push({ name: p.service_name, amount: amt })
+      // No card (fee / retainer) → shown on the invoice, billed in full, no commission.
+      items.push({ name: p.service_name, amount: amt, card: '' })
     }
   }
-  if (commission > 0) items.push({ name: 'Commission', amount: commission })
+  if (commission > 0) items.push({ name: 'Commission', amount: commission, card: '' })
   return items
 }
 
