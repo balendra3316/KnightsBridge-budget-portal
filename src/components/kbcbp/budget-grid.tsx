@@ -74,22 +74,41 @@ export default function BudgetGrid({ client, services, entries, months, invoices
 
   const [rate, setRate] = useState<number>((Number(client.commission_rate) || 0) / 100)
 
+  // ---- Sub-service roll-up helpers ----
+  // A parent that owns sub-services is totalled from those children, so editing a
+  // child updates the parent (and its commission). A parent with no children keeps
+  // its own entered amount.
+  const childrenOf = (svcId: string) => services.filter(s => s.parent_service_id === svcId)
+  const hasKids = (svcId: string) => services.some(s => s.parent_service_id === svcId)
+  const savedEffective = (svcId: string, month: string): number =>
+    hasKids(svcId)
+      ? childrenOf(svcId).reduce((s, c) => s + getAmount(c.id, month), 0)
+      : getAmount(svcId, month)
+  const currentEffective = (svcId: string): number =>
+    hasKids(svcId)
+      ? childrenOf(svcId).reduce((s, c) => s + getCurrentAmount(c.id), 0)
+      : getCurrentAmount(svcId)
+  // What to persist for a service: a parent with children stores the rolled-up sum
+  // so its saved amount always matches its sub-services.
+  const amountToSave = (svcId: string): number =>
+    hasKids(svcId) ? currentEffective(svcId) : getCurrentAmount(svcId)
+
   const computeMonthTotal = (month: string) =>
-    services.filter(s => !s.parent_service_id).reduce((sum, s) => sum + getAmount(s.id, month), 0)
+    services.filter(s => !s.parent_service_id).reduce((sum, s) => sum + savedEffective(s.id, month), 0)
 
   // Invoice/commission preview for any month, computed from its saved budget
   // entries — lets those rows show without having to click into the month.
   const monthCalc = (month: string) =>
     computeInvoice(
       services.map(s => ({
-        service_type: s.service_type, credit_card: s.credit_card,
+        id: s.id, service_type: s.service_type, credit_card: s.credit_card,
         parent_service_id: s.parent_service_id, amount: getAmount(s.id, month),
       })),
       rate
     )
 
   const currentLines = activeMonth ? services.map(s => ({
-    service_type: s.service_type, credit_card: s.credit_card,
+    id: s.id, service_type: s.service_type, credit_card: s.credit_card,
     parent_service_id: s.parent_service_id, amount: getCurrentAmount(s.id),
   })) : []
   const calc = activeMonth
@@ -137,7 +156,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
-      const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
+      const ents = services.map(s => ({ service_id: s.id, amount: amountToSave(s.id) }))
       const r = await saveBudgetEntries(client.id, activeMonth, ents)
       if (r.error) { setMsg(r.error); return }
       closeEdit()
@@ -147,7 +166,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
-      const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
+      const ents = services.map(s => ({ service_id: s.id, amount: amountToSave(s.id) }))
       const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
       if (r1.error) { setMsg(r1.error); return }
       const r2 = await createDraftFromBudget(client.id, activeMonth, rate)
@@ -166,7 +185,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
-      const ents = services.map(s => ({ service_id: s.id, amount: getCurrentAmount(s.id) }))
+      const ents = services.map(s => ({ service_id: s.id, amount: amountToSave(s.id) }))
       const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
       if (r1.error) { setMsg(r1.error); return }
       const r2 = await sendForReview(client.id, activeMonth)
@@ -306,14 +325,25 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                   </td>
                   {months.map(m => {
                     const isActive = m === activeMonth
+                    const rollup = !isSub && hasKids(svc.id)   // parent auto-summed from its sub-services
                     if (isActive && editable) {
+                      if (rollup) {
+                        return (
+                          <td key={m} className="px-3 py-1.5 text-right border-b border-kb-border bg-kb-entry">
+                            <span title="Auto-summed from sub-services"
+                              className="inline-block min-w-[70px] text-right px-2 py-1 font-mono text-xs font-semibold text-kb-fg-2">
+                              {fmt(currentEffective(svc.id))}
+                            </span>
+                          </td>
+                        )
+                      }
                       return (
                         <td key={m} className="px-3 py-1.5 text-right border-b border-kb-border bg-kb-entry">
                           <EditableCell defaultValue={getCurrentAmount(svc.id)} onChange={v => updateAmount(svc.id, v)} />
                         </td>
                       )
                     }
-                    const amt = getAmount(svc.id, m)
+                    const amt = isSub ? getAmount(svc.id, m) : savedEffective(svc.id, m)
                     return (
                       <td key={m} className={`px-3 py-1.5 text-right font-mono text-xs whitespace-nowrap border-b border-kb-border text-kb-fg-2 ${isActive ? 'bg-kb-entry' : ''}`}>
                         {amt > 0 ? fmt(amt) : <span className="text-kb-fg-3">&mdash;</span>}

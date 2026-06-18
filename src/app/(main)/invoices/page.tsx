@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import InvoiceRowActions from '@/components/kbcbp/invoice-row-actions'
+import { getSessionUser, canCreate } from '@/lib/auth'
 
 const STATUS_CLS: Record<string, { label: string; cls: string; dotCls: string }> = {
   draft:     { label: 'Draft',        cls: 'bg-kb-surface-alt text-kb-fg-2', dotCls: 'bg-kb-muted' },
@@ -26,37 +27,13 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function AppBar() {
-  return (
-    <div className="flex items-center gap-1 px-6 py-3 bg-kb-surface border-b border-kb-border sticky top-0 z-[100]">
-      <div className="font-semibold text-sm tracking-tight mr-3">
-        KB<span className="text-kb-accent">CBP</span>
-      </div>
-      {[
-        { label: 'Budget Entry', href: '/', active: false },
-        { label: 'Approvals', href: '/approvals', active: false },
-        { label: 'Invoices', href: '/invoices', active: true },
-        { label: 'Reports', href: '#', active: false },
-      ].map(item => (
-        <Link key={item.label} href={item.href}
-          className={`px-3 py-1 rounded-md text-[13px] font-medium no-underline transition-colors duration-150 ${item.active ? 'bg-kb-accent-light text-kb-accent-text' : 'bg-transparent text-kb-fg-2'}`}>
-          {item.label}
-        </Link>
-      ))}
-      <div className="flex-1" />
-      <Link href="/invoices/new"
-        className="px-3.5 py-1.5 rounded-md border-none bg-kb-accent text-white text-xs font-semibold no-underline font-sans">
-        + Create Invoice
-      </Link>
-      <div className="w-px h-5 bg-kb-border mx-2" />
-      <div className="w-7 h-7 rounded-full bg-kb-accent text-white flex items-center justify-center text-[11px] font-semibold">
-        VM
-      </div>
-    </div>
-  )
-}
-
 export default async function InvoicesPage() {
+  const user = await getSessionUser()
+  const role = user?.role ?? 'creator'
+  // Invoices are authored on the Budget Entry tab now; creators just get a link
+  // back there instead of a standalone "new invoice" form.
+  const showCreate = canCreate(role)
+
   const supabase = await createClient()
   const { data: invoices } = await supabase
     .from('invoices')
@@ -74,9 +51,7 @@ export default async function InvoicesPage() {
   const cols = ['Invoice #', 'Client', 'Month', 'PM', 'Fee', 'Ad Spend', 'Commission', 'Total', 'Status', '']
 
   return (
-    <div className="min-h-screen bg-kb-bg font-sans">
-      <AppBar />
-
+    <div>
       {/* Status bar */}
       <div className="flex items-center gap-4 px-6 py-2 bg-kb-surface-alt border-b border-kb-border text-xs text-kb-fg-2">
         <span className="flex items-center gap-[5px]">
@@ -98,6 +73,13 @@ export default async function InvoicesPage() {
           <span className="w-[7px] h-[7px] rounded-full inline-block bg-kb-green-dot" />
           {counts.approved} approved
         </span>
+        <div className="flex-1" />
+        {showCreate && (
+          <Link href="/"
+            className="px-3.5 py-1.5 rounded-md border-none bg-kb-accent text-white text-xs font-semibold no-underline font-sans">
+            + New from Budget Entry
+          </Link>
+        )}
       </div>
 
       <div className="max-w-[1400px] mx-auto px-6 py-5 pb-20">
@@ -106,12 +88,16 @@ export default async function InvoicesPage() {
             <div className="text-4xl mb-3">&#129466;</div>
             <div className="text-[15px] font-semibold text-kb-fg mb-1.5">No invoices yet</div>
             <div className="text-[13px] text-kb-fg-3 mb-5">
-              Create your first invoice to get started
+              {showCreate
+                ? 'Create invoices from the Budget Entry tab — add services and spend, then generate a draft.'
+                : 'No invoices to show yet'}
             </div>
-            <Link href="/invoices/new"
-              className="inline-block px-5 py-2 rounded-lg bg-kb-accent text-white text-[13px] font-semibold no-underline">
-              Create Invoice
-            </Link>
+            {showCreate && (
+              <Link href="/"
+                className="inline-block px-5 py-2 rounded-lg bg-kb-accent text-white text-[13px] font-semibold no-underline">
+                Go to Budget Entry
+              </Link>
+            )}
           </div>
         ) : (
           <div className="bg-kb-surface rounded-xl border border-kb-border overflow-hidden">
@@ -164,7 +150,7 @@ export default async function InvoicesPage() {
                             className="px-2.5 py-1 rounded-[5px] border border-kb-border text-[11px] font-semibold text-kb-fg-2 no-underline font-sans hover:bg-kb-surface-alt transition-colors duration-150">
                             View
                           </Link>
-                          <InvoiceRowActions id={inv.id} status={inv.status} />
+                          <InvoiceRowActions id={inv.id} status={inv.status} role={role} />
                         </div>
                       </td>
                     </tr>

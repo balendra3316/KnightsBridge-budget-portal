@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { approveInvoice, rejectInvoice, adminLogout } from '@/app/admin/actions'
+import { approveInvoice, rejectInvoice } from '@/app/admin/actions'
+import { logout } from '@/lib/auth-actions'
 
 type Invoice = {
   id: string
@@ -190,7 +191,7 @@ export function LogoutButton() {
   const [isPending, startTransition] = useTransition()
   return (
     <button
-      onClick={() => startTransition(() => adminLogout())}
+      onClick={() => startTransition(() => logout())}
       disabled={isPending}
       className="px-3 py-[5px] rounded-md border border-kb-border bg-kb-surface text-kb-fg-2 text-xs font-medium font-sans cursor-pointer"
     >Sign Out</button>

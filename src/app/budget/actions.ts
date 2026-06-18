@@ -2,7 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { computeInvoice, billingLabel } from '@/lib/commission'
+import { computeInvoice, billingLabel, buildLineItems } from '@/lib/commission'
+import { getSessionUser, canCreate } from '@/lib/auth'
 
 export async function saveBudgetEntries(
   clientId: string,
@@ -35,6 +36,10 @@ export async function createDraftFromBudget(
   billingMonth: string,
   rate: number
 ): Promise<{ error?: string }> {
+  const user = await getSessionUser()
+  if (!user) return { error: 'Not signed in' }
+  if (!canCreate(user.role)) return { error: 'Only creators can create invoices' }
+
   const supabase = await createClient()
 
   // Fetch client info
@@ -48,7 +53,7 @@ export async function createDraftFromBudget(
   // Fetch budget entries for this month, with the service metadata the engine needs.
   const { data: entries } = await supabase
     .from('budget_entries')
-    .select('amount, service_id, client_services(service_type, credit_card, parent_service_id)')
+    .select('amount, service_id, client_services(service_name, service_type, credit_card, parent_service_id)')
     .eq('client_id', clientId)
     .eq('billing_month', billingMonth)
 
@@ -57,8 +62,10 @@ export async function createDraftFromBudget(
   // Apply the commission rules in code (sub-lines are skipped inside computeInvoice).
   const lines = entries.map(e => {
     const svc = e.client_services as unknown as
-      { service_type: string; credit_card: string; parent_service_id: string | null } | null
+      { service_name: string; service_type: string; credit_card: string; parent_service_id: string | null } | null
     return {
+      id: e.service_id,
+      service_name: svc?.service_name ?? 'Service',
       service_type: svc?.service_type ?? 'fee',
       credit_card: svc?.credit_card ?? '',
       parent_service_id: svc?.parent_service_id ?? null,
@@ -67,6 +74,8 @@ export async function createDraftFromBudget(
   })
 
   const calc = computeInvoice(lines, rate)
+  // Freeze the printable rows now (client-card spend excluded, KB shown in full).
+  const lineItems = buildLineItems(lines, rate)
 
   // Generate invoice number
   const { count } = await supabase
@@ -89,6 +98,7 @@ export async function createDraftFromBudget(
     commission_amount: calc.commission,
     invoice_total: calc.invoiceTotal,
     monthly_total: calc.monthlyTotal,
+    line_items: lineItems,
     status: 'draft',
   })
 
@@ -203,6 +213,10 @@ export async function sendForReview(
   clientId: string,
   billingMonth: string
 ): Promise<{ error?: string }> {
+  const user = await getSessionUser()
+  if (!user) return { error: 'Not signed in' }
+  if (!canCreate(user.role)) return { error: 'Only creators can submit invoices' }
+
   const supabase = await createClient()
 
   // A draft invoice goes out for the first time; a rejected one is being resubmitted.

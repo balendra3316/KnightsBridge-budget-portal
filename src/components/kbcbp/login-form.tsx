@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { adminLogin } from '@/app/admin/actions'
+import { login } from '@/lib/auth-actions'
 
-const inputCls = "w-full px-3.5 py-2.5 rounded-lg border border-kb-border-strong text-sm font-sans outline-none bg-kb-bg"
+const inputCls =
+  'w-full px-3.5 py-2.5 rounded-lg border border-kb-border-strong text-sm font-sans outline-none bg-kb-bg'
 
-export default function AdminLoginForm() {
+export default function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -15,7 +16,8 @@ export default function AdminLoginForm() {
     e.preventDefault()
     setError(null)
     startTransition(async () => {
-      const result = await adminLogin(email, password)
+      // On success the action redirects, so we only ever see the error branch.
+      const result = await login(email, password)
       if (result?.error) setError(result.error)
     })
   }
@@ -30,7 +32,7 @@ export default function AdminLoginForm() {
           type="email"
           value={email}
           onChange={e => setEmail(e.target.value)}
-          placeholder="admin@knightbridge.com"
+          placeholder="you@knightbridge.com"
           required
           className={inputCls}
         />
@@ -62,10 +64,6 @@ export default function AdminLoginForm() {
       >
         {isPending ? 'Signing in...' : 'Sign In'}
       </button>
-
-      <div className="mt-5 px-3 py-2.5 rounded-md bg-kb-surface-alt border border-kb-border text-[11px] text-kb-fg-3 text-center">
-        Demo: admin@knightbridge.com / admin123
-      </div>
     </form>
   )
 }

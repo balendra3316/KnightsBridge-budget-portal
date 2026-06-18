@@ -15,7 +15,7 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KBCBP",
+  title: "KBPCBP",
   description: "KnightBridge Client Budget & Planning",
 };
 

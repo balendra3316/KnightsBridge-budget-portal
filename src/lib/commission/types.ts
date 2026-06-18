@@ -1,6 +1,8 @@
-// One budget line for a single month. Sub-lines (parent_service_id != null) are
-// tracking-only breakdowns for the freelancer and are NEVER counted financially.
+// One budget line for a single month. A sub-line (parent_service_id != null)
+// rolls UP into its parent: a parent that has sub-lines is billed on the SUM of
+// its children, not on its own entered amount.
 export type BudgetLine = {
+  id: string                    // service id — lets children find their parent
   service_type: string          // 'fee' | 'ad' | 'seo'
   credit_card: string           // '' | 'Client Card' | 'KB Card'
   parent_service_id: string | null

@@ -2,46 +2,28 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { getSessionUser, canApprove, canCreate, canSendToQuickbooks } from '@/lib/auth'
 
-export type CreateInvoiceInput = {
-  client_name: string
-  billing_month: string
-  pm_name: string
-  commission_rate: number
-  billing_pattern: string
-  fee_amount: number
-  ad_spend_amount: number
-  commission_amount: number
-  invoice_total: number
-  memo: string
-}
-
-export async function createInvoice(data: CreateInvoiceInput): Promise<{ error?: string }> {
-  const supabase = await createClient()
-
-  // Generate next KB invoice number
-  const { count } = await supabase
-    .from('invoices')
-    .select('*', { count: 'exact', head: true })
-
-  const invoiceNumber = `KB${String(61000 + (count ?? 0) + 1)}`
-
-  const { error } = await supabase.from('invoices').insert({
-    ...data,
-    invoice_number: invoiceNumber,
-    status: 'draft',
-  })
-
-  if (error) return { error: error.message }
-
-  revalidatePath('/invoices')
-  return {}
-}
+// NOTE: invoices are created from the Budget Entry grid (see budget/actions.ts
+// `createDraftFromBudget`), which applies the card/commission rules. The old
+// standalone "New Invoice" form was removed, so there's no manual createInvoice
+// here anymore — only status changes and the QuickBooks push live below.
 
 export async function updateInvoiceStatus(
   id: string,
   status: 'draft' | 'review' | 'approved' | 'rejected'
 ): Promise<{ error?: string }> {
+  const user = await getSessionUser()
+  if (!user) return { error: 'Not signed in' }
+
+  // Approving or rejecting is approver-only. Everything else (submit for review,
+  // reset to draft) is a creator action.
+  if (status === 'approved' || status === 'rejected') {
+    if (!canApprove(user.role)) return { error: 'Only approvers can approve or reject' }
+  } else if (!canCreate(user.role)) {
+    return { error: 'Only creators can submit invoices' }
+  }
+
   const supabase = await createClient()
 
   const { error } = await supabase
@@ -60,6 +42,12 @@ export async function updateInvoiceStatus(
 export async function createQuickbooksInvoice(
   id: string
 ): Promise<{ error?: string }> {
+  const user = await getSessionUser()
+  if (!user) return { error: 'Not signed in' }
+  if (!canSendToQuickbooks(user.role)) {
+    return { error: 'Not allowed to send to QuickBooks' }
+  }
+
   const supabase = await createClient()
 
   // Guard: only approved invoices may be sent to QuickBooks.

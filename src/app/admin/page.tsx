@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getAdmin } from './actions'
+import { getSessionUser, canApprove } from '@/lib/auth'
 import AdminInvoiceTable, { LogoutButton } from '@/components/kbcbp/admin-invoice-table'
 
 export default async function AdminDashboard() {
-  const admin = await getAdmin()
-  if (!admin) redirect('/admin/login')
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+  // Approvals dashboard is approver/admin-only; creators don't belong here.
+  if (!canApprove(user.role)) redirect('/')
 
   const supabase = await createClient()
 
@@ -28,17 +30,20 @@ export default async function AdminDashboard() {
       {/* Admin header */}
       <div className="flex items-center gap-1 px-6 py-3 bg-kb-surface border-b border-kb-border sticky top-0 z-[100]">
         <div className="font-semibold text-sm tracking-tight mr-2">
-          KB<span className="text-kb-accent">CBP</span>
+          KBP<span className="text-kb-accent">CBP</span>
         </div>
         <span className="text-[10px] font-semibold tracking-wide text-white bg-kb-accent rounded px-1.5 py-0.5">
-          ADMIN
+          APPROVALS
         </span>
-        <Link href="/" className="px-3 py-1 rounded-md text-[13px] font-medium text-kb-fg-2 no-underline ml-3">
-          Budget Entry
-        </Link>
+        {/* Only admins also have the creator workspace; approvers stay here. */}
+        {user.role === 'admin' && (
+          <Link href="/" className="px-3 py-1 rounded-md text-[13px] font-medium text-kb-fg-2 no-underline ml-3">
+            Budget Entry
+          </Link>
+        )}
         <div className="flex-1" />
         <span className="text-xs text-kb-fg-2 mr-3">
-          {admin.name}
+          {user.name}
         </span>
         <LogoutButton />
       </div>

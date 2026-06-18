@@ -1,34 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
 
 function fmt(n: number | null | undefined) {
   if (n == null || n === 0) return '—'
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-}
-
-function AppBar() {
-  return (
-    <div className="flex items-center gap-1 px-6 py-3 bg-kb-surface border-b border-kb-border sticky top-0 z-[100]">
-      <div className="font-semibold text-sm tracking-tight mr-3">
-        KB<span className="text-kb-accent">CBP</span>
-      </div>
-      {[
-        { label: 'Budget Entry', href: '/', active: false },
-        { label: 'Approvals', href: '/approvals', active: true },
-        { label: 'Invoices', href: '/invoices', active: false },
-        { label: 'Reports', href: '#', active: false },
-      ].map(item => (
-        <Link key={item.label} href={item.href}
-          className={`px-3 py-1 rounded-md text-[13px] font-medium no-underline ${item.active ? 'bg-kb-accent-light text-kb-accent-text' : 'bg-transparent text-kb-fg-2'}`}>
-          {item.label}
-        </Link>
-      ))}
-      <div className="flex-1" />
-      <div className="w-7 h-7 rounded-full bg-kb-accent text-white flex items-center justify-center text-[11px] font-semibold">
-        VM
-      </div>
-    </div>
-  )
 }
 
 const STATUS_CLS: Record<string, { label: string; cls: string; dotCls: string }> = {
@@ -52,9 +26,7 @@ export default async function ApprovalsPage() {
   const cols = ['Invoice #', 'Client', 'Month', 'PM', 'Fee', 'Ad Spend', 'Commission', 'Total', 'Status', 'Approved On']
 
   return (
-    <div className="min-h-screen bg-kb-bg font-sans">
-      <AppBar />
-
+    <div>
       {/* Status bar */}
       <div className="flex items-center gap-4 px-6 py-2 bg-kb-surface-alt border-b border-kb-border text-xs text-kb-fg-2">
         <span className="flex items-center gap-[5px]">

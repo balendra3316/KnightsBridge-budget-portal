@@ -55,44 +55,31 @@ export default async function InvoicePreviewPage({
 
   if (!invoice) notFound()
 
-  let lineItems: { name: string; type: string; amount: number }[] = []
+  type LineItem = { name: string; amount: number }
+  let lineItems: LineItem[] = []
 
-  if (invoice.client_id) {
-    const [{ data: services }, { data: entries }] = await Promise.all([
-      supabase
-        .from('client_services')
-        .select('id, service_name, service_type, parent_service_id')
-        .eq('client_id', invoice.client_id)
-        .is('parent_service_id', null)
-        .order('sort_order'),
-      supabase
-        .from('budget_entries')
-        .select('service_id, amount')
-        .eq('client_id', invoice.client_id)
-        .eq('billing_month', invoice.billing_month)
-        .gt('amount', 0),
-    ])
-
-    if (services && entries) {
-      for (const svc of services) {
-        const entry = entries.find(e => e.service_id === svc.id)
-        if (entry) {
-          lineItems.push({
-            name: svc.service_name,
-            type: svc.service_type,
-            amount: Number(entry.amount),
-          })
-        }
-      }
-    }
-  }
-
-  if (lineItems.length === 0) {
-    if (Number(invoice.fee_amount) > 0) {
-      lineItems.push({ name: 'Management Fee', type: 'fee', amount: Number(invoice.fee_amount) })
-    }
-    if (Number(invoice.ad_spend_amount) > 0) {
-      lineItems.push({ name: 'Digital Advertising Budget', type: 'ad', amount: Number(invoice.ad_spend_amount) })
+  // Render purely from the invoice snapshot — never recompute from live budget
+  // entries (which could drift from the locked totals).
+  if (Array.isArray(invoice.line_items) && invoice.line_items.length > 0) {
+    // Rows frozen when the draft was created (card rules already applied:
+    // client-card spend excluded, KB-card spend shown in full).
+    lineItems = (invoice.line_items as LineItem[]).map(li => ({
+      name: String(li.name),
+      amount: Number(li.amount) || 0,
+    }))
+  } else {
+    // Fallback for invoices created before line_items existed: rebuild from the
+    // saved aggregate fields. Client-Card spend is represented ONLY by its
+    // commission; the billed ad spend is whatever the total isn't fee/commission
+    // (i.e. the KB-Card portion). Client-card spend never appears as a line.
+    const fee = Number(invoice.fee_amount) || 0
+    const commission = Number(invoice.commission_amount) || 0
+    const total = Number(invoice.invoice_total) || 0
+    const kbAdSpend = Math.max(0, total - fee - commission)
+    if (fee > 0) lineItems.push({ name: 'Management & Service Fees', amount: fee })
+    if (kbAdSpend > 0) lineItems.push({ name: 'Digital Advertising Budget', amount: kbAdSpend })
+    if (commission > 0) {
+      lineItems.push({ name: `Commission (${fmtRate(invoice.commission_rate)}%)`, amount: commission })
     }
   }
 
@@ -227,19 +214,6 @@ export default async function InvoicePreviewPage({
                   </td>
                 </tr>
               ))}
-              {Number(invoice.commission_amount) > 0 && (
-                <tr className={lineItems.length % 2 === 0 ? 'bg-white' : 'bg-[#F7FAFB]'}>
-                  <td className="py-2.5 px-3 text-[13px] text-kb-fg">
-                    Commission ({invoice.commission_rate}% on ad spend)
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-[13px] text-kb-fg font-mono">
-                    {fmtRate(invoice.commission_amount)}
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-[13px] text-kb-fg font-mono">
-                    {fmtRate(invoice.commission_amount)}
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
 
