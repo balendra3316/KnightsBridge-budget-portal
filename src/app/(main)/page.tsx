@@ -7,6 +7,27 @@ const ALL_MONTHS = [
   'JUL 2026','AUG 2026','SEP 2026','OCT 2026','NOV 2026','DEC 2026',
 ]
 
+// Supabase caps a single request at 1000 rows. budget_entries (and to a lesser
+// extent services/invoices) blow past that once a few clients are entered, and the
+// dropped rows are the most recent — exactly the services someone just added, which
+// then render as "—" in the grid. Page through in 1000-row windows so every row loads.
+async function fetchAllRows(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  make: () => any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any[]> {
+  const PAGE = 1000
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await make().range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    out.push(...data)
+    if (data.length < PAGE) break
+  }
+  return out
+}
+
 export default async function BudgetEntryPage() {
   const supabase = await createClient()
 
@@ -27,27 +48,27 @@ export default async function BudgetEntryPage() {
     )
   }
 
-  const { data: allServices } = await supabase
-    .from('client_services')
-    .select('*')
-    .order('sort_order')
+  const allServices = await fetchAllRows(() =>
+    supabase.from('client_services').select('*').order('sort_order'))
 
-  const { data: allEntries } = await supabase
-    .from('budget_entries')
-    .select('*')
-    .in('billing_month', ALL_MONTHS)
+  const allEntries = await fetchAllRows(() =>
+    supabase.from('budget_entries').select('*').in('billing_month', ALL_MONTHS).order('billing_month'))
 
-  const { data: allInvoices } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, status, billing_month, client_id, commission_amount, invoice_total, monthly_total')
-    .in('billing_month', ALL_MONTHS)
+  // line_items is the frozen per-month snapshot — the grid uses it to display
+  // already-submitted (non-editable) months exactly as they were billed.
+  const allInvoices = await fetchAllRows(() =>
+    supabase
+      .from('invoices')
+      .select('id, invoice_number, status, billing_month, client_id, commission_amount, invoice_total, monthly_total, line_items')
+      .in('billing_month', ALL_MONTHS)
+      .order('billing_month'))
 
   return (
     <FilterableClientGrid
       clients={clients}
-      services={allServices ?? []}
-      entries={allEntries ?? []}
-      invoices={allInvoices ?? []}
+      services={allServices}
+      entries={allEntries}
+      invoices={allInvoices}
       months={ALL_MONTHS}
     />
   )

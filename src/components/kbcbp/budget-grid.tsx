@@ -12,10 +12,17 @@ type Service = {
   credit_card: string; parent_service_id: string | null; sort_order: number
 }
 type BudgetEntry = { service_id: string; billing_month: string; amount: number }
+type LineItem = { name: string; amount: number; card?: string }
 type InvoiceInfo = {
   id: string; invoice_number: string; status: string; billing_month: string
   commission_amount: number | null; invoice_total: number | null; monthly_total: number | null
+  line_items: LineItem[] | null
 }
+
+// A month is "frozen" once its invoice has left the editable stage (draft/rejected).
+// Frozen months render from their line_items snapshot; editable months render live.
+const isEditableStatus = (status: string | undefined) =>
+  !status || status === 'draft' || status === 'rejected'
 type Client = {
   id: string; name: string; project_name: string | null; parent_group: string | null
   region: string | null; tags: string[] | null; team: string | null
@@ -93,6 +100,23 @@ export default function BudgetGrid({ client, services, entries, months, invoices
   const amountToSave = (svcId: string): number =>
     hasKids(svcId) ? currentEffective(svcId) : getCurrentAmount(svcId)
 
+  // For a FROZEN month (already submitted), its line_items snapshot is the source of
+  // truth for what each parent service was billed — keyed by name — so the month keeps
+  // showing the exact services it held even after they're added/removed later. Returns
+  // null for editable / un-invoiced months, which render from live budget entries.
+  const frozenLineMap = (month: string): Map<string, number> | null => {
+    const inv = invoices.find(i => i.billing_month === month)
+    if (!inv || isEditableStatus(inv.status)) return null
+    const items = inv.line_items
+    if (!items || items.length === 0) return null
+    const map = new Map<string, number>()
+    for (const li of items) {
+      if (li.name === 'Commission') continue   // derived row, not a service
+      map.set(li.name, Number(li.amount) || 0)
+    }
+    return map
+  }
+
   const computeMonthTotal = (month: string) =>
     services.filter(s => !s.parent_service_id).reduce((sum, s) => sum + savedEffective(s.id, month), 0)
 
@@ -138,6 +162,30 @@ export default function BudgetGrid({ client, services, entries, months, invoices
     return out
   })()
 
+  // Services billed in a FROZEN month but since deleted from the client's live list are
+  // resurrected as read-only "ghost" rows (from those invoices' line_items) so submitted
+  // months never lose a service. Only frozen invoices contribute ghosts — editable months
+  // reflect the live list directly.
+  const ghostRows: Service[] = (() => {
+    const liveNames = new Set(services.map(s => s.service_name))
+    const seen = new Set<string>()
+    const out: Service[] = []
+    for (const inv of invoices) {
+      if (isEditableStatus(inv.status)) continue
+      for (const li of inv.line_items ?? []) {
+        if (li.name === 'Commission') continue
+        if (liveNames.has(li.name) || seen.has(li.name)) continue
+        seen.add(li.name)
+        out.push({
+          id: `ghost:${li.name}`, service_name: li.name, service_type: 'fee',
+          credit_card: li.card ?? '', parent_service_id: null, sort_order: 9999,
+        })
+      }
+    }
+    return out
+  })()
+  const renderedServices = [...orderedServices, ...ghostRows]
+
   // Catalog-driven option lists for the Add forms.
   const existingTopNames = new Set(topServices.map(s => s.service_name))
   const availableServiceNames = PARENT_SERVICE_NAMES.filter(n => !existingTopNames.has(n))
@@ -170,15 +218,23 @@ export default function BudgetGrid({ client, services, entries, months, invoices
       const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
       if (r1.error) { setMsg(r1.error); return }
       const r2 = await createDraftFromBudget(client.id, activeMonth, rate)
-      setMsg(r2.error || 'Draft invoice created')
+      setMsg(r2.error || 'Draft saved')
     })
   }
+  // Submitting always saves the latest amounts and recomputes the invoice first, so the
+  // totals that go out for approval reflect the current services (not a stale snapshot
+  // from when the draft was first created).
   const handleSendReview = () => {
     if (!activeMonth) return
     setMsg(null)
     startTransition(async () => {
-      const r = await sendForReview(client.id, activeMonth)
-      setMsg(r.error || 'Sent for review')
+      const ents = services.map(s => ({ service_id: s.id, amount: amountToSave(s.id) }))
+      const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
+      if (r1.error) { setMsg(r1.error); return }
+      const r2 = await createDraftFromBudget(client.id, activeMonth, rate)
+      if (r2.error) { setMsg(r2.error); return }
+      const r3 = await sendForReview(client.id, activeMonth)
+      setMsg(r3.error || 'Sent for review')
     })
   }
   const handleResubmit = () => {
@@ -188,8 +244,10 @@ export default function BudgetGrid({ client, services, entries, months, invoices
       const ents = services.map(s => ({ service_id: s.id, amount: amountToSave(s.id) }))
       const r1 = await saveBudgetEntries(client.id, activeMonth, ents)
       if (r1.error) { setMsg(r1.error); return }
-      const r2 = await sendForReview(client.id, activeMonth)
-      setMsg(r2.error || 'Resent for approval')
+      const r2 = await createDraftFromBudget(client.id, activeMonth, rate)
+      if (r2.error) { setMsg(r2.error); return }
+      const r3 = await sendForReview(client.id, activeMonth)
+      setMsg(r3.error || 'Resent for approval')
     })
   }
   const closeAdd = () => {
@@ -281,8 +339,9 @@ export default function BudgetGrid({ client, services, entries, months, invoices
             </tr>
           </thead>
           <tbody>
-            {orderedServices.map(svc => {
+            {renderedServices.map(svc => {
               const isSub = !!svc.parent_service_id
+              const isGhost = svc.id.startsWith('ghost:')
               return (
                 <tr key={svc.id}>
                   <td className={`px-3 py-1.5 sticky left-0 z-[1] border-b border-kb-border bg-kb-surface ${isSub ? 'text-kb-fg-3' : 'text-kb-fg'}`}>
@@ -298,9 +357,16 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                           sub
                         </span>
                       )}
+                      {isGhost && (
+                        <span title="Removed from this client — kept so submitted months still show it"
+                          className="text-[9px] font-semibold tracking-wide uppercase rounded px-1 py-px text-kb-fg-3 border border-kb-border">
+                          removed
+                        </span>
+                      )}
                       <button onClick={() => handleDelete(svc.id)}
-                        disabled={isPending || !canEditServices}
-                        title={canEditServices ? 'Delete'
+                        disabled={isPending || !canEditServices || isGhost}
+                        title={isGhost ? 'Already removed — shown for submitted months only'
+                          : canEditServices ? 'Delete'
                           : activeMonth ? 'Locked — this month is already submitted'
                           : 'Click a draft month to edit services'}
                         className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-sm leading-none disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer bg-transparent border-none text-kb-delete">
@@ -320,7 +386,9 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                   {months.map(m => {
                     const isActive = m === activeMonth
                     const rollup = !isSub && hasKids(svc.id)   // parent auto-summed from its sub-services
-                    if (isActive && editable) {
+                    // Live inline editing only for a real service in an open (un-invoiced or
+                    // draft/rejected) month. Ghost rows are history — never editable.
+                    if (isActive && editable && !isGhost) {
                       if (rollup) {
                         return (
                           <td key={m} className="px-3 py-1.5 text-right border-b border-kb-border bg-kb-entry">
@@ -337,7 +405,17 @@ export default function BudgetGrid({ client, services, entries, months, invoices
                         </td>
                       )
                     }
-                    const amt = isSub ? getAmount(svc.id, m) : savedEffective(svc.id, m)
+                    // Display a saved value. A FROZEN month reads its frozen line_items
+                    // snapshot by name (authoritative record of what it was billed, even
+                    // for since-added/removed services). Sub-services rolled into their
+                    // parent, so they read their own entry. Editable / un-invoiced months
+                    // fall back to the live budget entries.
+                    const liMap = frozenLineMap(m)
+                    const amt = isSub
+                      ? getAmount(svc.id, m)
+                      : liMap
+                        ? (liMap.get(svc.service_name) ?? 0)
+                        : isGhost ? 0 : savedEffective(svc.id, m)
                     return (
                       <td key={m} className={`px-3 py-1.5 text-right font-mono text-xs whitespace-nowrap border-b border-kb-border text-kb-fg-2 ${isActive ? 'bg-kb-entry' : ''}`}>
                         {amt > 0 ? fmt(amt) : <span className="text-kb-fg-3">&mdash;</span>}
@@ -508,7 +586,7 @@ export default function BudgetGrid({ client, services, entries, months, invoices
             {activeMonth}
           </span>
 
-          {!activeInvoice ? (
+          {editable ? (
             <label className="flex items-center gap-1.5">
               <span className="text-kb-fg-3">Commission</span>
               <select value={rate} onChange={e => setRate(parseFloat(e.target.value))} className={selectCls}>
@@ -581,10 +659,17 @@ export default function BudgetGrid({ client, services, entries, months, invoices
               </button>
             </div>
           ) : invoiceStatus === 'draft' ? (
-            <button onClick={handleSendReview}
-              className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-kb-accent-light text-kb-accent-text border-none">
-              Send for Approval
-            </button>
+            <div className="flex gap-2">
+              <button onClick={handleSaveAndDraft}
+                title="Recalculate this draft from its current services & amounts"
+                className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-kb-green text-white border-none">
+                Save
+              </button>
+              <button onClick={handleSendReview}
+                className="px-3.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-kb-accent-light text-kb-accent-text border-none">
+                Send for Approval
+              </button>
+            </div>
           ) : invoiceStatus === 'review' ? (
             <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-kb-amber-light text-kb-amber">Under Review</span>
           ) : invoiceStatus === 'approved' ? (

@@ -14,9 +14,11 @@ type Service = {
   credit_card: string; parent_service_id: string | null; sort_order: number
 }
 type BudgetEntry = { client_id: string; service_id: string; billing_month: string; amount: number }
+type LineItem = { name: string; amount: number; card?: string }
 type InvoiceInfo = {
   id: string; invoice_number: string; status: string; billing_month: string; client_id: string
   commission_amount: number | null; invoice_total: number | null; monthly_total: number | null
+  line_items: LineItem[] | null
 }
 
 type Props = {

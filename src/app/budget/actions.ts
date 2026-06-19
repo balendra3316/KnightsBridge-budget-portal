@@ -85,19 +85,12 @@ export async function createDraftFromBudget(
     await supabase.from('clients').update({ commission_rate: rate * 100 }).eq('id', clientId)
   }
 
-  // Generate invoice number
-  const { count } = await supabase
-    .from('invoices')
-    .select('*', { count: 'exact', head: true })
-  const invoiceNumber = `KB${String(61500 + (count ?? 0) + 1)}`
-
-  const { error } = await supabase.from('invoices').insert({
-    invoice_number: invoiceNumber,
-    client_id: clientId,
+  // The computed fields, shared by both the insert (new month) and update (re-saving an
+  // existing draft) paths.
+  const fields = {
     client_name: client.project_name
       ? `${client.name} / ${client.project_name}`
       : client.name,
-    billing_month: billingMonth,
     pm_name: client.team,
     commission_rate: rate * 100,
     billing_pattern: billingLabel(calc.clientCardAd, calc.kbCardAd),
@@ -107,10 +100,40 @@ export async function createDraftFromBudget(
     invoice_total: calc.invoiceTotal,
     monthly_total: calc.monthlyTotal,
     line_items: lineItems,
-    status: 'draft',
-  })
+  }
 
-  if (error) return { error: error.message }
+  // If a draft/rejected invoice already exists for this month, recompute it IN PLACE so
+  // edits (added/removed services, changed amounts or rate) flow into its totals and
+  // line_items. A submitted (review/approved/sent) invoice is frozen and cannot change.
+  const { data: existing } = await supabase
+    .from('invoices')
+    .select('id, status')
+    .eq('client_id', clientId)
+    .eq('billing_month', billingMonth)
+    .maybeSingle()
+
+  if (existing) {
+    if (existing.status !== 'draft' && existing.status !== 'rejected') {
+      return { error: 'This month is already submitted and can no longer be edited' }
+    }
+    const { error } = await supabase.from('invoices').update(fields).eq('id', existing.id)
+    if (error) return { error: error.message }
+  } else {
+    // Generate invoice number for a brand-new draft.
+    const { count } = await supabase
+      .from('invoices')
+      .select('*', { count: 'exact', head: true })
+    const invoiceNumber = `KB${String(61500 + (count ?? 0) + 1)}`
+
+    const { error } = await supabase.from('invoices').insert({
+      invoice_number: invoiceNumber,
+      client_id: clientId,
+      billing_month: billingMonth,
+      status: 'draft',
+      ...fields,
+    })
+    if (error) return { error: error.message }
+  }
 
   revalidatePath('/')
   revalidatePath('/invoices')
