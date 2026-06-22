@@ -50,10 +50,11 @@ export async function createQuickbooksInvoice(
 
   const supabase = await createClient()
 
-  // Guard: only approved invoices may be sent to QuickBooks.
+  // Guard: only approved invoices may be sent to QuickBooks. Pull the full row so
+  // we can hand the invoice data to n8n.
   const { data: invoice, error: fetchError } = await supabase
     .from('invoices')
-    .select('status')
+    .select('*')
     .eq('id', id)
     .single()
 
@@ -62,15 +63,41 @@ export async function createQuickbooksInvoice(
     return { error: 'Only approved invoices can be sent to QuickBooks.' }
   }
 
-  // TODO: Real QuickBooks API call goes here (create invoice via QBO SDK).
-  // For now this is a static/mock step — on success we flip the status to 'sent'.
-
+  // Flip the status to 'sent' on click, then notify n8n. n8n re-reads the row,
+  // creates the invoice in QuickBooks, and writes back qbo_invoice_id.
   const { error } = await supabase
     .from('invoices')
     .update({ status: 'sent' })
     .eq('id', id)
 
   if (error) return { error: error.message }
+
+  // Fire the n8n webhook with the invoice data. This whole block is best-effort:
+  // anything that goes wrong (no URL, network down, n8n offline, slow/hanging
+  // request, non-2xx response) is swallowed and logged — it must NEVER throw or
+  // surface an error to the user. The status is already 'sent', and n8n will
+  // create the QuickBooks invoice and write back qbo_invoice_id when it runs.
+  const webhookUrl = process.env.N8N_QBO_WEBHOOK_URL
+  if (webhookUrl) {
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-webhook-secret': process.env.N8N_WEBHOOK_SECRET ?? '',
+        },
+        body: JSON.stringify({ invoice_id: id, invoice }),
+        // Don't let a hanging n8n freeze the click — bail after 8s.
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!res.ok) {
+        console.error(`n8n webhook returned ${res.status} for invoice ${id}`)
+      }
+    } catch (e) {
+      // Network error, timeout/abort, bad URL — log and move on, never crash.
+      console.error('n8n webhook call failed:', e)
+    }
+  }
 
   revalidatePath('/invoices')
   return {}

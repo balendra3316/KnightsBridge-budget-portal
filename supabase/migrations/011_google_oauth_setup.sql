@@ -1,0 +1,47 @@
+-- 011_google_oauth_setup.sql   ***DASHBOARD CONFIG — no SQL to run***
+-- "Continue with Google" login for the existing pre-seeded users.
+--
+-- The app code (src/lib/auth-actions.ts loginWithGoogle + src/app/auth/callback)
+-- handles the OAuth flow. This file documents the one-time setup that lives in
+-- the Google Cloud + Supabase dashboards, because there is no migration for it.
+--
+-- GOAL: a user clicks "Continue with Google", Google proves they own the email,
+-- and they are logged in ONLY if that email is already one of our seeded users
+-- (migrations 009 / 010). No password is ever entered. Unknown Google accounts
+-- are rejected. Because the seeded users' emails are already confirmed, Supabase
+-- automatically LINKS the Google identity to the existing auth user, so their
+-- role in public.profiles is preserved.
+--
+-- ---------------------------------------------------------------------------
+-- STEP 1 — Google Cloud Console (https://console.cloud.google.com)
+-- ---------------------------------------------------------------------------
+--   a. APIs & Services > OAuth consent screen: configure (External, add your
+--      support email; add test users if the app is unpublished).
+--   b. APIs & Services > Credentials > Create credentials > OAuth client ID >
+--      "Web application".
+--   c. Authorized redirect URI — paste your Supabase callback (find the exact
+--      value in Supabase > Authentication > Providers > Google):
+--         https://<YOUR-PROJECT-REF>.supabase.co/auth/v1/callback
+--   d. Copy the generated Client ID and Client Secret.
+--
+-- ---------------------------------------------------------------------------
+-- STEP 2 — Supabase Dashboard > Authentication
+-- ---------------------------------------------------------------------------
+--   a. Providers > Google: toggle ON, paste the Client ID + Client Secret, Save.
+--   b. **Sign In / Providers (or Settings) > "Allow new users to sign up": OFF.**
+--      THIS IS THE GATE. With sign-ups disabled, Google login will LINK to and
+--      sign in an existing seeded user, but a brand-new (unknown) email is
+--      rejected by Supabase itself — so only pre-seeded emails can get in.
+--   c. URL Configuration > Redirect URLs: add your app origins so the callback
+--      is allowed, e.g.:
+--         http://localhost:3000/auth/callback
+--         https://<your-production-domain>/auth/callback
+--
+-- ---------------------------------------------------------------------------
+-- STEP 3 — verify
+-- ---------------------------------------------------------------------------
+--   * Sign in with a seeded email (e.g. victor@kbpark.com) via Google  -> works,
+--     keeps role = admin.
+--   * Sign in with any other Google account  -> bounced to /login?error=...
+--     (rejected by Supabase, and as a backstop by the profile check in
+--      src/app/auth/callback/route.ts).

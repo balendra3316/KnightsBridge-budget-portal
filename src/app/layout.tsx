@@ -29,7 +29,10 @@ export default function RootLayout({
       lang="en"
       className={`${dmSans.variable} ${dmMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-kb-bg text-kb-fg font-sans">
+      <body
+        className="min-h-full flex flex-col bg-kb-bg text-kb-fg font-sans"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>

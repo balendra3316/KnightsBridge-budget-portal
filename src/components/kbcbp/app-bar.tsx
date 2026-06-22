@@ -37,6 +37,7 @@ export default function AppBar({ name, role }: { name: string; role: Role }) {
   const tabs = [
     ...(canCreate ? [{ label: 'Budget Entry', href: '/' }, { label: 'Invoices', href: '/invoices' }] : []),
     ...(canApprove ? [{ label: 'Approvals', href: '/admin' }] : []),
+    ...(role === 'admin' ? [{ label: 'Clients', href: '/clients' }] : []),
   ]
 
   return (

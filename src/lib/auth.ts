@@ -41,3 +41,5 @@ export const canCreate = (role: Role) => role === 'creator' || role === 'admin'
 // Both creator and approver push approved invoices to QuickBooks.
 export const canSendToQuickbooks = (role: Role) =>
   role === 'creator' || role === 'approver' || role === 'admin'
+// Managing clients (add now; edit/delete later) is admin-only.
+export const canManageClients = (role: Role) => role === 'admin'
