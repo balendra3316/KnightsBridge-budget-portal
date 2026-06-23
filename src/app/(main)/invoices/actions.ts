@@ -72,6 +72,12 @@ export async function createQuickbooksInvoice(
 
   if (error) return { error: error.message }
 
+  // ---------------------------------------------------------------------------
+  // n8n webhook DISABLED per manager request. Clicking "Send to QuickBooks" now
+  // only flips the status to 'sent' (done above) and does NOT notify n8n.
+  // To re-enable the QuickBooks push, simply uncomment the block below.
+  // ---------------------------------------------------------------------------
+  /*
   // Fire the n8n webhook with the invoice data. This whole block is best-effort:
   // anything that goes wrong (no URL, network down, n8n offline, slow/hanging
   // request, non-2xx response) is swallowed and logged — it must NEVER throw or
@@ -98,6 +104,7 @@ export async function createQuickbooksInvoice(
       console.error('n8n webhook call failed:', e)
     }
   }
+  */
 
   revalidatePath('/invoices')
   return {}

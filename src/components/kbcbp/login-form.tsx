@@ -1,7 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { login, loginWithGoogle } from '@/lib/auth-actions'
+import { login } from '@/lib/auth-actions'
+// Google sign-in temporarily hidden per manager request. The `loginWithGoogle`
+// server action and /auth/callback route are left in place — to re-enable, add
+// `loginWithGoogle` back to the import above and uncomment the handler + button.
+// import { login, loginWithGoogle } from '@/lib/auth-actions'
 
 const inputCls =
   'w-full px-3.5 py-2.5 rounded-lg border border-kb-border-strong text-sm font-sans outline-none bg-kb-bg'
@@ -26,14 +30,16 @@ export default function LoginForm({
     })
   }
 
-  const handleGoogle = () => {
-    setError(null)
-    startTransition(async () => {
-      // On success this redirects to Google, so we only see the error branch.
-      const result = await loginWithGoogle()
-      if (result?.error) setError(result.error)
-    })
-  }
+  // Google sign-in handler — hidden per manager request. Uncomment (and restore
+  // the loginWithGoogle import) to bring the button back.
+  // const handleGoogle = () => {
+  //   setError(null)
+  //   startTransition(async () => {
+  //     // On success this redirects to Google, so we only see the error branch.
+  //     const result = await loginWithGoogle()
+  //     if (result?.error) setError(result.error)
+  //   })
+  // }
 
   return (
     <form onSubmit={handleSubmit}>
@@ -78,6 +84,9 @@ export default function LoginForm({
         {isPending ? 'Signing in...' : 'Sign In'}
       </button>
 
+      {/* Google sign-in button — hidden per manager request. Uncomment this
+          block (and restore handleGoogle + the loginWithGoogle import) to bring
+          it back. The backend (loginWithGoogle action + /auth/callback) is untouched.
       <div className="flex items-center gap-3 my-5">
         <div className="h-px flex-1 bg-kb-border" />
         <span className="text-[11px] text-kb-fg-3 uppercase tracking-wide">or</span>
@@ -98,6 +107,7 @@ export default function LoginForm({
         </svg>
         Continue with Google
       </button>
+      */}
     </form>
   )
 }
